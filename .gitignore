@@ -1,0 +1,32 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Pipeline working data and outputs — everything here is reproducible from a run.
+# Anchored to the repository root: an unanchored `data/` would also match
+# viz/public/data, which is committed.
+/data/
+*.duckdb
+*.duckdb.wal
+
+# HTTP caches and logs written by osmnx/osmnet next to the working directory.
+cache/
+logs/
+
+# Dagster run storage. `dagster asset materialize` creates a throwaway home
+# per invocation when DAGSTER_HOME is unset.
+.dagster/
+.tmp_dagster_home_*/
+tmp*/
+
+# Vite viewer. viz/public/data is deliberately NOT ignored: it is the trimmed
+# bundle the hosted site serves, and GitHub Pages builds from the repository.
+viz/node_modules/
+viz/dist/
+
+# Slide deck. deck/vendor/ IS committed — it is what lets the deck open from a
+# file:// URL with nothing installed. node_modules only appears while upgrading
+# reveal.js; see deck/README.md.
+deck/node_modules/
+deck/package-lock.json

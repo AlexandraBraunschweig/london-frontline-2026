@@ -1,32 +1,62 @@
 schema: spec-driven
 
-# Project context (optional)
-# This is shown to AI when creating artifacts.
-# Add your tech stack, conventions, style guides, domain knowledge, etc.
-# Example:
-#   context: |
-#     Tech stack: TypeScript, React, Node.js
-#     We use conventional commits
-#     Domain: e-commerce platform
+context: |
+  Domain: synthetic population generation and evacuation ride-share planning for UK
+  Local Authority Districts. First target: Thanet District Council, LAD E07000114.
+  The output feeds a traffic microsimulation (MATSim) comparing a
+  one-car-per-household evacuation baseline against a ride-shared scenario.
+  MATSim replaced UDST MANTA: MANTA is OD-pair based, and the plan's home
+  collection stops have no representation in an OD matrix — they would either
+  flatten into direct origin-destination pairs, deleting the detours pooling
+  causes, or split into separate trips, inflating the vehicle count. Both
+  corrupt the quantity the project exists to measure. The pipeline emits the
+  scenario but NOT the network: MATSim's own OpenStreetMap reader builds that,
+  and locations bind to it by OSM way id rather than by link id.
 
-# Per-artifact rules (optional)
-# Add custom rules for specific artifacts.
-# Example:
-#   rules:
-#     proposal:
-#       - Keep proposals under 500 words
-#       - Always include a "Non-goals" section
-#     tasks:
-#       - Break tasks into chunks of max 2 hours
+  Tech stack: Python, Dagster (assets), DuckDB with the spatial extension,
+  pandana/osmnet for pedestrian network queries, networkx for graph work over the
+  person_relationships edge table. Pipeline pattern follows the `northcray/data`
+  reference project.
 
-# Per-operation guidance (optional)
-# Add advisory guidance for how apply and archive work should be conducted.
-# This is separate from artifact rules above.
-# Example:
-#   operations:
-#     apply:
-#       guidance:
-#         - Keep test summaries concise
-#     archive:
-#       guidance:
-#         - Summarize the archive outcome before finishing
+  Data sources are open-data only: ONS Census 2021 OA-level tables (via the NOMIS
+  API), ONS geography boundaries API, ONS National Statistics UPRN Lookup (NSUL),
+  OpenStreetMap. Never propose scraping council portals or any authenticated or
+  licensed source (AddressBase in particular).
+
+  Dwelling facts that are easy to get wrong: NSUL is the ONLY dwelling dataset —
+  it carries the UPRN, its British National Grid coordinates (GRIDGB1E/GRIDGB1N),
+  the postcode, and the Output Area allocation, all in one file. OS Open UPRN, OS
+  Open USRN, and Overture Buildings are all deliberately NOT used; OS Open UPRN in
+  particular contributes only coordinates NSUL already has. Output Area allocation
+  comes from NSUL's OA21CD, never from local point-in-polygon intersection, so the
+  geography matches what the Census marginals are published against. NSUL is
+  distributed as a whole-GB zip split into region members; extract only the member
+  covering the target LAD by HTTP range request (71 MB for the South East, against
+  514 MB for the archive).
+
+  Home locations are identified by UPRN and coordinates. NO human-readable address
+  is produced anywhere in the pipeline — this was explicitly dropped, not
+  overlooked. Do not reintroduce an address field.
+
+  Modeling conventions:
+  - A muster point IS a single parked car, at the nearest drivable road point to
+    its owner household's home. There is no catalog of gathering sites, and no
+    site capacity distinct from that car's seats. Snapping has NO distance cap:
+    OSM has not mapped many residential access and service roads, so a large snap
+    distance means missing map data, not a dwelling without road access. Never
+    drop a vehicle for being far from a mapped road; report the distance instead.
+  - Geography is modeled as a generic AdminArea{level, parent_id, geometry} so the
+    schema ports to non-UK census hierarchies.
+  - Every threshold (capacities, distances, ceilings, ages, speeds, times) is a
+    named config value, not a literal in the algorithm.
+  - Shortfalls are outputs, not exceptions: anything that cannot be satisfied
+    (unseated people, unresolved parking, missing dwellings, suppressed marginals)
+    is recorded and reported rather than silently absorbed or force-fitted.
+
+rules:
+  proposal:
+    - State what is explicitly deferred to a future iteration, not just what is built
+  design:
+    - Every decision must name the alternative considered and why it was rejected
+  tasks:
+    - Every algorithmic requirement needs a matching test task

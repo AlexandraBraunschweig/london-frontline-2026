@@ -1,0 +1,333 @@
+/* Deck theme.
+ *
+ * Dark by default: this is presented on a projector, and the figures in
+ * figures/ are rendered against the dark chart surface (#1a1a19), so a light
+ * deck would put them in a box. Colour tokens are the data-viz dark-mode set,
+ * and nothing here introduces a hue the figures do not already use.
+ */
+
+:root {
+  --surface: #1a1a19;
+  --plane: #0d0d0d;
+  --ink: #ffffff;
+  --secondary: #c3c2b7;
+  --muted: #898781;
+  --grid: #2c2c2a;
+  --rule: #383835;
+  --series: #3987e5;
+  --critical: #d03b3b;
+  --good: #0ca30c;
+  --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+}
+
+.reveal-viewport {
+  background: var(--plane);
+}
+
+.reveal {
+  font-family: var(--sans);
+  font-size: 30px;
+  color: var(--secondary);
+  -webkit-font-smoothing: antialiased;
+}
+
+.reveal .slides {
+  text-align: left;
+}
+
+/* Reveal centres each slide vertically, so a section must not claim a height or
+   a display mode of its own: overriding either fights the layout reveal has
+   already done and blanks the slide. */
+.reveal .slides section {
+  padding: 0;
+}
+
+/* --- Type ---------------------------------------------------------------- */
+.reveal h1,
+.reveal h2,
+.reveal h3 {
+  font-family: var(--sans);
+  color: var(--ink);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  text-transform: none;
+  margin: 0;
+  line-height: 1.1;
+}
+
+.reveal h1 {
+  font-size: 2.6em;
+}
+
+.reveal h2 {
+  font-size: 1.5em;
+  margin-bottom: 0.5em;
+}
+
+.reveal h3 {
+  font-size: 1em;
+  color: var(--secondary);
+  font-weight: 600;
+}
+
+.reveal p {
+  line-height: 1.45;
+  margin: 0 0 0.7em;
+}
+
+.reveal strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.reveal em {
+  color: var(--series);
+  font-style: normal;
+  font-weight: 600;
+}
+
+.reveal a {
+  color: var(--series);
+  text-decoration: none;
+  border-bottom: 1px solid rgba(57, 135, 229, 0.4);
+}
+
+.reveal code {
+  font-family: var(--mono);
+  font-size: 0.82em;
+  color: var(--ink);
+  background: var(--grid);
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+}
+
+.reveal ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.reveal ul li {
+  margin: 0 0 0.55em;
+  padding-left: 1.1em;
+  position: relative;
+  line-height: 1.4;
+}
+
+.reveal ul li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.62em;
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  background: var(--rule);
+}
+
+.reveal ul li.on::before {
+  background: var(--series);
+}
+
+.reveal ul li.off::before {
+  background: var(--critical);
+}
+
+/* --- Slide furniture ----------------------------------------------------- */
+.eyebrow {
+  font-size: 0.6em;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+  margin-bottom: 0.8em;
+}
+
+.lead {
+  font-size: 1.15em;
+  color: var(--ink);
+  max-width: 22em;
+}
+
+.note {
+  font-size: 0.62em;
+  color: var(--muted);
+  line-height: 1.5;
+  max-width: 40em;
+}
+
+/* Which warehouse tables a slide's figures came from. Sits under the content
+   rather than pinned to the frame, because reveal centres the content block. */
+.source {
+  font-size: 0.5em;
+  color: var(--muted);
+  font-family: var(--mono);
+  margin-top: 1.1em;
+}
+
+/* --- Stat rows and tiles ------------------------------------------------- */
+.stats {
+  display: flex;
+  gap: 2.2em;
+  align-items: flex-start;
+  margin: 0.6em 0 0.9em;
+}
+
+.stat .value {
+  font-size: 2.1em;
+  font-weight: 700;
+  color: var(--ink);
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+
+.stat .value.accent {
+  color: var(--series);
+}
+
+.stat .value.alarm {
+  color: var(--critical);
+}
+
+.stat .label {
+  font-size: 0.58em;
+  color: var(--muted);
+  margin-top: 0.7em;
+  max-width: 12em;
+  line-height: 1.35;
+}
+
+.hero {
+  font-size: 5.4em;
+  font-weight: 700;
+  color: var(--series);
+  line-height: 0.95;
+  letter-spacing: -0.04em;
+}
+
+/* --- Two-column layout --------------------------------------------------- */
+.cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2em;
+  align-items: start;
+}
+
+.cols.wide-left {
+  grid-template-columns: 1.35fr 1fr;
+}
+
+/* --- The pipeline diagram ------------------------------------------------ */
+.pipeline {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  margin: 0.7em 0 1em;
+}
+
+.stage {
+  flex: 1;
+  border-top: 2px solid var(--rule);
+  padding: 0.7em 0.9em 0 0;
+}
+
+.stage.final {
+  border-top-color: var(--series);
+}
+
+.stage .n {
+  font-family: var(--mono);
+  font-size: 0.5em;
+  color: var(--muted);
+}
+
+.stage .what {
+  font-size: 0.66em;
+  color: var(--ink);
+  font-weight: 600;
+  margin: 0.35em 0 0.3em;
+  line-height: 1.25;
+}
+
+.stage .how {
+  font-size: 0.52em;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+/* --- Figures ------------------------------------------------------------- */
+.figure {
+  width: 100%;
+  display: block;
+}
+
+.figure.tight {
+  max-height: 62vh;
+  object-fit: contain;
+}
+
+figcaption {
+  font-size: 0.55em;
+  color: var(--muted);
+  margin-top: 0.6em;
+}
+
+/* --- Tables -------------------------------------------------------------- */
+.reveal table {
+  border-collapse: collapse;
+  font-size: 0.6em;
+  width: 100%;
+}
+
+.reveal table th {
+  text-align: left;
+  color: var(--muted);
+  font-weight: 600;
+  border-bottom: 1px solid var(--rule);
+  padding: 0.45em 0.8em 0.45em 0;
+}
+
+.reveal table td {
+  padding: 0.45em 0.8em 0.45em 0;
+  border-bottom: 1px solid var(--grid);
+  color: var(--secondary);
+  vertical-align: top;
+}
+
+.reveal table td.num {
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+/* --- Title slide --------------------------------------------------------- */
+.title-slide {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.title-slide .rule {
+  width: 96px;
+  height: 3px;
+  background: var(--series);
+  margin: 0.9em 0;
+}
+
+/* --- Progress / controls ------------------------------------------------- */
+.reveal .progress {
+  color: var(--series);
+  height: 3px;
+}
+
+.reveal .controls {
+  color: var(--rule);
+}
+
+.reveal .slide-number {
+  background: none;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 15px;
+}
