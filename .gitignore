@@ -1,0 +1,19 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Pipeline working data and outputs — everything here is reproducible from a run.
+data/
+*.duckdb
+*.duckdb.wal
+
+# HTTP caches and logs written by osmnx/osmnet next to the working directory.
+cache/
+logs/
+
+# Dagster run storage. `dagster asset materialize` creates a throwaway home
+# per invocation when DAGSTER_HOME is unset.
+.dagster/
+.tmp_dagster_home_*/
+tmp*/

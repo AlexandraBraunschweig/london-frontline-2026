@@ -30,15 +30,19 @@ Every generated Vehicle SHALL have a capacity attribute set to a single configur
 - **THEN** its capacity SHALL equal the configured fixed capacity value
 
 ### Requirement: Vehicle parking location
-Each Vehicle SHALL be parked at the nearest point on the drivable road network to its owner household's assigned home location. That parking point SHALL lie within a configured maximum snap distance (default 20 metres) of the home location. Where the nearest road point exceeds that distance, the system SHALL record the Vehicle as having an unresolved parking location rather than placing it at an arbitrary point.
+Each Vehicle SHALL be parked at the nearest point on the drivable road network to its owner household's assigned home location, whatever that distance. The system SHALL NOT exclude a Vehicle from the fleet for being far from a mapped road: OpenStreetMap's coverage of residential access roads, service roads and driveways is incomplete, so a large snap distance indicates a gap in the map rather than a dwelling with no road access. The snap distance SHALL be recorded per Vehicle and reported as a distribution, so the effect of that incompleteness stays visible.
 
-#### Scenario: Home location beside a road
-- **WHEN** a Vehicle's owner household's home location has a drivable road point within the configured snap distance
-- **THEN** the Vehicle's parking location SHALL be that nearest road point
+#### Scenario: Home location beside a mapped road
+- **WHEN** a Vehicle's owner household's home location has a mapped drivable road nearby
+- **THEN** the Vehicle's parking location SHALL be the nearest point on that road
 
-#### Scenario: Home location with no nearby road
-- **WHEN** no drivable road point lies within the configured snap distance of the owner household's home location
-- **THEN** the Vehicle SHALL be recorded as having an unresolved parking location and SHALL be excluded from the available fleet
+#### Scenario: Home location far from any mapped road
+- **WHEN** the nearest mapped drivable road is far from the owner household's home location
+- **THEN** the Vehicle SHALL still be parked at that nearest point and SHALL remain in the available fleet, with its snap distance recorded
+
+#### Scenario: Snap distances reported
+- **WHEN** vehicles have been parked
+- **THEN** the distribution of snap distances SHALL be reported, including the count exceeding a configured review threshold
 
 ### Requirement: Muster point is a parked vehicle
 A muster point SHALL be defined as the parking location of exactly one Vehicle. The system SHALL NOT derive muster points from a separate catalog of sites (schools, community centres, car parks). A muster point's capacity SHALL be the seat capacity of its Vehicle — there is no site-level capacity distinct from seats.

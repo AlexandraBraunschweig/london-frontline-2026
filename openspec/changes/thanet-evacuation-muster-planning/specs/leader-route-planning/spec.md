@@ -16,7 +16,7 @@ For each Vehicle, the system SHALL select exactly one leader from its occupants 
 - **THEN** the system SHALL select that occupant as the Vehicle's leader
 
 ### Requirement: Route output
-For each Vehicle, the system SHALL produce a route consisting of an ordered list of stops followed by a target destination. The first stop SHALL be the Vehicle's own muster point (its parking location), where all walk-in occupants gather. Each subsequent stop SHALL be the home address of one home-collection group allocated to that Vehicle, ordered by increasing distance from the muster point. Each stop SHALL carry a meeting_time and the list of people expected there (name, and phone_number where available).
+For each Vehicle, the system SHALL produce a route consisting of an ordered list of stops followed by a target destination. The first stop SHALL be the Vehicle's own muster point (its parking location), where all walk-in occupants gather. Each subsequent stop SHALL be the home location — UPRN and coordinates — of one home-collection group allocated to that Vehicle, ordered by increasing distance from the muster point. Each stop SHALL carry a meeting_time and the list of people expected there (name, and phone_number where available). Stops are identified by UPRN and coordinates; no human-readable address is produced (see `home-location-assignment`).
 
 #### Scenario: Vehicle with only walk-in occupants
 - **WHEN** none of a Vehicle's occupants are classified home-collection
@@ -24,7 +24,7 @@ For each Vehicle, the system SHALL produce a route consisting of an ordered list
 
 #### Scenario: Vehicle with a home-collection occupant
 - **WHEN** a Vehicle's occupants include at least one home-collection group
-- **THEN** that group's household address SHALL appear as a stop after the muster-point stop
+- **THEN** that group's household UPRN and coordinates SHALL appear as a stop after the muster-point stop
 
 ### Requirement: Meeting times
 All muster-point stops SHALL share a single configured fleet-wide departure time. Each subsequent collection stop's meeting_time SHALL be estimated as the previous stop's meeting_time plus the straight-line distance between them divided by a configured average driving speed. No congestion or network-routed travel time is modeled in this iteration; realistic timings are the concern of the downstream traffic microsimulation.

@@ -11,23 +11,33 @@ context: |
   person_relationships edge table. Pipeline pattern follows the `northcray/data`
   reference project.
 
-  Data sources are open-data only: ONS Census 2021 OA-level tables, ONS geography
-  boundaries API, ONS National Statistics UPRN Lookup (NSUL), OS Open UPRN, OS Open
-  USRN, OpenStreetMap. Never propose scraping council portals or any authenticated
-  or licensed source (AddressBase in particular).
+  Data sources are open-data only: ONS Census 2021 OA-level tables (via the NOMIS
+  API), ONS geography boundaries API, ONS National Statistics UPRN Lookup (NSUL),
+  OpenStreetMap. Never propose scraping council portals or any authenticated or
+  licensed source (AddressBase in particular).
 
-  Address facts that are easy to get wrong: OS Open UPRN contains only UPRN plus
-  coordinates — no house number, street, or postcode. Real addresses are AddressBase
-  and therefore out of bounds. Household addresses are SYNTHETIC: a generated
-  building number plus the nearest OS Open USRN street name, always flagged as such.
-  UPRNs are allocated to Output Areas by joining NSUL, never by local point-in-polygon
-  intersection, so the geography matches what the Census marginals are published
-  against. Overture Buildings is deliberately not used.
+  Dwelling facts that are easy to get wrong: NSUL is the ONLY dwelling dataset —
+  it carries the UPRN, its British National Grid coordinates (GRIDGB1E/GRIDGB1N),
+  the postcode, and the Output Area allocation, all in one file. OS Open UPRN, OS
+  Open USRN, and Overture Buildings are all deliberately NOT used; OS Open UPRN in
+  particular contributes only coordinates NSUL already has. Output Area allocation
+  comes from NSUL's OA21CD, never from local point-in-polygon intersection, so the
+  geography matches what the Census marginals are published against. NSUL is
+  distributed as a whole-GB zip split into region members; extract only the member
+  covering the target LAD by HTTP range request (71 MB for the South East, against
+  514 MB for the archive).
+
+  Home locations are identified by UPRN and coordinates. NO human-readable address
+  is produced anywhere in the pipeline — this was explicitly dropped, not
+  overlooked. Do not reintroduce an address field.
 
   Modeling conventions:
-  - A muster point IS a single parked car, at the nearest drivable road point
-    within 20 m of its owner household's home. There is no catalog of gathering
-    sites, and no site capacity distinct from that car's seats.
+  - A muster point IS a single parked car, at the nearest drivable road point to
+    its owner household's home. There is no catalog of gathering sites, and no
+    site capacity distinct from that car's seats. Snapping has NO distance cap:
+    OSM has not mapped many residential access and service roads, so a large snap
+    distance means missing map data, not a dwelling without road access. Never
+    drop a vehicle for being far from a mapped road; report the distance instead.
   - Geography is modeled as a generic AdminArea{level, parent_id, geometry} so the
     schema ports to non-UK census hierarchies.
   - Every threshold (capacities, distances, ceilings, ages, speeds, times) is a

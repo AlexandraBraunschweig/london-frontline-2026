@@ -1,0 +1,41 @@
+[project]
+name = "london-frontline"
+version = "0.1.0"
+description = "Synthetic population and evacuation ride-share planning for UK Local Authority Districts"
+readme = "README.md"
+# Pinned to 3.11: pandana 0.7 publishes wheels only up to cp311, and building its
+# C++ extension from source is not worth the churn. Revisit when pandana ships
+# newer wheels.
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "dagster>=1.8",
+    "dagster-duckdb>=0.24",
+    "duckdb>=1.1",
+    "pandas>=2.0",
+    "numpy>=1.26,<2",
+    "networkx>=3.2",
+    "pandana>=0.7",
+    "requests>=2.32",
+    "pyarrow>=17",
+    "osmnx>=2.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "dagster-webserver>=1.8",
+]
+
+[tool.dagster]
+module_name = "london_frontline.definitions"
+code_location_name = "london_frontline"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/london_frontline"]
