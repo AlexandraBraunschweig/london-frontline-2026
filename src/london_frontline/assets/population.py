@@ -22,22 +22,6 @@ LICENSE_CAR = "car"
 LICENSE_BUS = "bus"
 
 
-def _licence_types(
-    rng: np.random.Generator, ages: np.ndarray, planning: PlanningConfig
-) -> np.ndarray:
-    """Assign licence types from age and the configured holding proportions."""
-    draws = rng.random(len(ages))
-    licences = np.full(len(ages), LICENSE_NONE, dtype=object)
-    of_age = ages >= planning.minimum_driving_age
-    licences[of_age & (draws < planning.car_license_proportion)] = LICENSE_CAR
-    licences[
-        of_age
-        & (draws >= planning.car_license_proportion)
-        & (draws < planning.car_license_proportion + planning.bus_license_proportion)
-    ] = LICENSE_BUS
-    return licences
-
-
 @asset(deps=[census_marginals_resolved], group_name="population")
 def synthetic_population(
     context: AssetExecutionContext,
@@ -79,6 +63,8 @@ def synthetic_population(
 
     household_frames: list[pd.DataFrame] = []
     person_frames: list[pd.DataFrame] = []
+    shortfalls: list[dict] = []
+    licence_conflicts: list[dict] = []
     next_household_id = 0
     next_person_id = 0
 
@@ -110,35 +96,10 @@ def synthetic_population(
             composition_marginal["value"].to_numpy(),
             household_total,
         )
-        cars = synthesis.allocate_counts(
-            rng,
-            [
-                # "No cars or vans in household" has no digits and means zero.
-                synthesis.leading_int(name, planning.open_ended_car_count)
-                if any(ch.isdigit() for ch in name)
-                else 0
-                for name in car_marginal["category_name"]
-            ],
-            car_marginal["value"].to_numpy(),
-            household_total,
-        ).astype(int)
-
         household_ids = np.arange(
             next_household_id, next_household_id + household_total
         )
         next_household_id += household_total
-
-        household_frames.append(
-            pd.DataFrame(
-                {
-                    "household_id": household_ids,
-                    "area_id": area,
-                    "composition_type": compositions,
-                    "num_persons": sizes,
-                    "num_cars": cars,
-                }
-            )
-        )
 
         # Persons are generated to fill the household sizes just allocated, so
         # the person count follows the household-size marginal rather than the
@@ -177,6 +138,61 @@ def synthetic_population(
             ]
         )
 
+        # Cars and licences are conditioned on the household's adults, so both
+        # are decided here rather than alongside the other household attributes:
+        # a household cannot own a car it has nobody old enough to drive.
+        household_position = np.repeat(np.arange(household_total), sizes)
+        is_adult = ages >= planning.minimum_driving_age
+        adults_per_household = np.bincount(
+            household_position[is_adult], minlength=household_total
+        )
+
+        car_values = [
+            # "No cars or vans in household" has no digits and means zero.
+            synthesis.leading_int(name, planning.open_ended_car_count)
+            if any(ch.isdigit() for ch in name)
+            else 0
+            for name in car_marginal["category_name"]
+        ]
+        category_counts = synthesis.apportion(
+            car_marginal["value"].to_numpy(), household_total
+        )
+        cars, car_shortfall = synthesis.assign_cars_capped_by_adults(
+            rng, car_values, category_counts, adults_per_household
+        )
+        for value, missing in car_shortfall.items():
+            shortfalls.append(
+                {"area_id": area, "cars_per_household": value, "households": missing}
+            )
+
+        target_licences = int(round(is_adult.sum() * planning.car_license_proportion))
+        licensed, licence_excess = synthesis.assign_car_licences(
+            rng, is_adult, household_position, cars, target_licences
+        )
+        if licence_excess:
+            licence_conflicts.append(
+                {"area_id": area, "licences_above_target": licence_excess}
+            )
+
+        licences = np.where(licensed, LICENSE_CAR, LICENSE_NONE).astype(object)
+        # Bus licences stay an independent draw: there is no bus ownership to
+        # couple them to.
+        bus_draw = rng.random(person_total) < planning.bus_license_proportion
+        licences[is_adult & ~licensed & bus_draw] = LICENSE_BUS
+
+        household_frames.append(
+            pd.DataFrame(
+                {
+                    "household_id": household_ids,
+                    "area_id": area,
+                    "composition_type": compositions,
+                    "num_persons": sizes,
+                    "num_cars": cars,
+                    "num_adults": adults_per_household,
+                }
+            )
+        )
+
         person_ids = np.arange(next_person_id, next_person_id + person_total)
         next_person_id += person_total
 
@@ -188,7 +204,7 @@ def synthetic_population(
                     "area_id": area,
                     "age": ages,
                     "sex": sexes,
-                    "license_type": _licence_types(rng, ages, planning),
+                    "license_type": licences,
                     "mobility_status": mobility_status,
                     "name": synthesis.names(rng, person_total),
                     "phone_number": synthesis.phone_numbers(
@@ -206,8 +222,28 @@ def synthetic_population(
     with warehouse.connect() as conn:
         conn.register("households_df", households)
         conn.register("persons_df", persons)
+        conn.register(
+            "car_shortfall_df",
+            pd.DataFrame(
+                shortfalls, columns=["area_id", "cars_per_household", "households"]
+            ),
+        )
+        conn.register(
+            "licence_conflict_df",
+            pd.DataFrame(
+                licence_conflicts, columns=["area_id", "licences_above_target"]
+            ),
+        )
         conn.execute("CREATE OR REPLACE TABLE households AS SELECT * FROM households_df")
         conn.execute("CREATE OR REPLACE TABLE persons AS SELECT * FROM persons_df")
+        conn.execute(
+            "CREATE OR REPLACE TABLE car_assignment_shortfall AS "
+            "SELECT * FROM car_shortfall_df"
+        )
+        conn.execute(
+            "CREATE OR REPLACE TABLE licence_target_conflicts AS "
+            "SELECT * FROM licence_conflict_df"
+        )
 
     without_phone = int(persons["phone_number"].isna().sum())
     context.log.info(
@@ -216,6 +252,13 @@ def synthetic_population(
         f"{len(persons):,}",
         households["area_id"].nunique(),
     )
+    over_capped = int((households["num_cars"] > households["num_adults"]).sum())
+    if over_capped:
+        raise ValueError(
+            f"{over_capped} households hold more cars than adults; the cap in "
+            f"assign_cars_capped_by_adults has been breached"
+        )
+
     context.add_output_metadata(
         {
             "households": len(households),
@@ -227,6 +270,11 @@ def synthetic_population(
             ),
             "car_owning_households": int((households["num_cars"] > 0).sum()),
             "vehicles_implied": int(households["num_cars"].sum()),
+            "households_with_more_cars_than_adults": int(
+                (households["num_cars"] > households["num_adults"]).sum()
+            ),
+            "car_shortfall_rows": len(shortfalls),
+            "licence_target_conflicts": len(licence_conflicts),
         }
     )
 
@@ -314,6 +362,43 @@ def population_validation(
             """
         ).fetchdf().iloc[0]
 
+    coupling = None
+    with warehouse.connect() as conn:
+        conn.execute(
+            """
+            CREATE OR REPLACE TABLE report_car_licence_coupling AS
+            WITH h AS (
+                SELECT hh.household_id, hh.num_cars, hh.num_adults,
+                       count(*) FILTER (WHERE p.license_type = 'car') AS drivers
+                FROM households hh JOIN persons p USING (household_id)
+                GROUP BY 1, 2, 3
+            )
+            SELECT num_cars,
+                   count(*) AS households,
+                   count(*) FILTER (WHERE drivers = 0) AS households_without_a_driver,
+                   count(*) FILTER (WHERE drivers < num_cars) AS drivers_below_cars,
+                   count(*) FILTER (WHERE num_cars > num_adults) AS cars_above_adults,
+                   round(avg(drivers), 2) AS mean_drivers
+            FROM h GROUP BY num_cars ORDER BY num_cars
+            """
+        )
+        coupling = conn.execute(
+            """
+            SELECT coalesce(sum(households_without_a_driver)
+                            FILTER (WHERE num_cars > 0), 0) AS car_owning_without_driver,
+                   coalesce(sum(cars_above_adults), 0) AS cars_above_adults,
+                   coalesce(sum(drivers_below_cars), 0) AS drivers_below_cars
+            FROM report_car_licence_coupling
+            """
+        ).fetchdf().iloc[0]
+
+    if int(coupling["car_owning_without_driver"]) or int(coupling["cars_above_adults"]):
+        raise ValueError(
+            f"Coupling breached: {int(coupling['car_owning_without_driver'])} "
+            f"car-owning households have no licensed driver and "
+            f"{int(coupling['cars_above_adults'])} hold more cars than adults"
+        )
+
     if int(row["households_mismatched"]):
         raise ValueError(
             f"{int(row['households_mismatched'])} Output Areas have a household "
@@ -353,5 +438,10 @@ def population_validation(
             "persons_published": published,
             "communal_establishment_shortfall": shortfall,
             "communal_establishment_shortfall_pct": round(shortfall_fraction * 100, 2),
+            "car_owning_households_without_a_driver": 0,
+            "households_with_more_cars_than_adults": 0,
+            "households_with_fewer_drivers_than_cars": int(
+                coupling["drivers_below_cars"]
+            ),
         }
     )

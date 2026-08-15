@@ -37,6 +37,111 @@ _LAST_NAMES = (
 ).split()
 
 
+def apportion(weights: Sequence[float], total: int) -> np.ndarray:
+    """Split ``total`` across ``weights`` by largest remainder.
+
+    Exposed separately from :func:`allocate_counts` because constrained
+    assignment needs the per-category counts, not a shuffled label array.
+    """
+    if total <= 0:
+        return np.zeros(len(weights), dtype=int)
+    weight_array = np.asarray(weights, dtype=float)
+    if weight_array.sum() <= 0:
+        weight_array = np.ones_like(weight_array)
+    shares = weight_array / weight_array.sum() * total
+    counts = np.floor(shares).astype(int)
+    shortfall = total - counts.sum()
+    if shortfall > 0:
+        for index in np.argsort(-(shares - counts))[:shortfall]:
+            counts[index] += 1
+    return counts
+
+
+def assign_cars_capped_by_adults(
+    rng: np.random.Generator,
+    car_values: Sequence[int],
+    category_counts: Sequence[int],
+    adults: np.ndarray,
+) -> tuple[np.ndarray, dict[int, int]]:
+    """Give each household a car count without exceeding its adult count.
+
+    ``car_values`` are the cars implied by each published category and
+    ``category_counts`` how many households belong in each. Households are drawn
+    at random from those *eligible* to hold a count — meaning they have at least
+    that many adults — rather than ranked by size, which would make every
+    three-car household one of the district's largest and is equally untrue.
+
+    Counts are placed high-first, because a household eligible for three cars is
+    also eligible for one but not the reverse. Where an Output Area has too few
+    multi-adult households to absorb its published marginal, the cap is kept and
+    the unplaced households are returned as a shortfall rather than the cap being
+    quietly breached.
+    """
+    household_count = len(adults)
+    cars = np.zeros(household_count, dtype=int)
+    assigned = np.zeros(household_count, dtype=bool)
+    shortfall: dict[int, int] = {}
+
+    order = sorted(
+        ((value, count) for value, count in zip(car_values, category_counts) if value > 0),
+        key=lambda item: -item[0],
+    )
+    for value, needed in order:
+        if needed <= 0:
+            continue
+        eligible = np.flatnonzero((~assigned) & (adults >= value))
+        take = min(needed, len(eligible))
+        if take:
+            chosen = rng.choice(eligible, size=take, replace=False)
+            cars[chosen] = value
+            assigned[chosen] = True
+        if take < needed:
+            shortfall[value] = needed - take
+    return cars, shortfall
+
+
+def assign_car_licences(
+    rng: np.random.Generator,
+    is_adult: np.ndarray,
+    household_position: np.ndarray,
+    cars: np.ndarray,
+    target_licences: int,
+) -> tuple[np.ndarray, int]:
+    """Assign car licences so every car-owning household can drive its cars.
+
+    Each household first takes as many licences as it has cars, capped by its
+    adults; the remaining budget is spread at random across other adults so the
+    overall licence-holding proportion still matches. Licences are redistributed,
+    never invented — if covering the cars already exceeds the target, the excess
+    is returned so the conflict is reported rather than absorbed.
+    """
+    licensed = np.zeros(len(is_adult), dtype=bool)
+    adults_by_household: dict[int, list[int]] = {}
+    for position, (household, adult) in enumerate(zip(household_position, is_adult)):
+        if adult:
+            adults_by_household.setdefault(int(household), []).append(position)
+
+    for household, count in enumerate(cars):
+        if count <= 0:
+            continue
+        members = adults_by_household.get(household)
+        if not members:
+            continue
+        required = min(int(count), len(members))
+        for position in rng.choice(members, size=required, replace=False):
+            licensed[position] = True
+
+    required_total = int(licensed.sum())
+    remaining = target_licences - required_total
+    if remaining > 0:
+        candidates = np.flatnonzero(is_adult & ~licensed)
+        take = min(remaining, len(candidates))
+        if take:
+            licensed[rng.choice(candidates, size=take, replace=False)] = True
+
+    return licensed, max(0, required_total - target_licences)
+
+
 def allocate_counts(
     rng: np.random.Generator,
     labels: Sequence[str],
@@ -58,15 +163,8 @@ def allocate_counts(
         # A marginal that is entirely zero carries no information; fall back to a
         # uniform split rather than failing the whole Output Area.
         weight_array = np.ones_like(weight_array)
-    shares = weight_array / weight_array.sum() * total
 
-    counts = np.floor(shares).astype(int)
-    shortfall = total - counts.sum()
-    if shortfall > 0:
-        # Hand the remaining units to the largest fractional parts.
-        remainders = shares - counts
-        for index in np.argsort(-remainders)[:shortfall]:
-            counts[index] += 1
+    counts = apportion(weight_array, total)
 
     allocation = np.repeat(np.asarray(labels, dtype=object), counts)
     rng.shuffle(allocation)

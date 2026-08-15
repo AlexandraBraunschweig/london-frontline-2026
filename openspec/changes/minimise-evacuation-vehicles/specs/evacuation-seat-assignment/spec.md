@@ -22,11 +22,19 @@ A later tier SHALL NOT be allocated a seat while any group in an earlier tier th
 - **THEN** the dependent-bearing group SHALL be seated first
 
 ### Requirement: Driver availability
-The system SHALL NOT finalize an activated Vehicle's occupant list unless at least one occupant has license_type = `car`. This is guaranteed by the activation constraint in `fleet-minimisation` rather than enforced by dropping vehicles after the fact.
+The system SHALL NOT finalize an activated Vehicle's occupant list unless at least one occupant has license_type = `car`. This is guaranteed by the activation constraint in `fleet-minimisation` rather than enforced by dropping vehicles after the fact, so occupants are never committed to a vehicle that turns out to be undrivable.
 
 #### Scenario: Driver present in every departing vehicle
 - **WHEN** a Vehicle's occupant list is finalized
 - **THEN** it SHALL contain at least one occupant with license_type = `car`
+
+#### Scenario: Owner household with no licensed driver
+- **WHEN** a Vehicle's owner household contains no member with license_type = `car`
+- **THEN** that Vehicle MAY still be activated if a licensed driver is among the people it would carry, and SHALL NOT be activated otherwise
+
+#### Scenario: No driver available for an otherwise-fillable vehicle
+- **WHEN** every person who could reach a Vehicle has license_type ≠ `car`
+- **THEN** that Vehicle SHALL NOT be activated, and those people SHALL remain available for another Vehicle rather than being recorded as unmet demand
 
 ## REMOVED Requirements
 
