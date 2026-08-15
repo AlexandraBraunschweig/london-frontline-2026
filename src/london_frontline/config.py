@@ -98,6 +98,7 @@ class PlanningConfig(ConfigurableResource):
     # Cap on distinct home-collection stops a single vehicle will make, so that
     # unavoidable stops spread across the fleet.
     max_collection_stops_per_vehicle: int = 3
+<<<<<<< Updated upstream
     # Where two vehicles would seat the same number of people, prefer the one
     # whose owner household is aboard: it needs no key handover, and it is a less
     # surprising instruction to give a real person.
@@ -106,6 +107,8 @@ class PlanningConfig(ConfigurableResource):
     # default of 1 activates anything that seats somebody, on the grounds that a
     # person left behind is worse than a near-empty car.
     minimum_vehicle_occupancy: int = 1
+=======
+>>>>>>> Stashed changes
 
     # --- Routes -------------------------------------------------------------
     # Single fleet-wide departure time; every muster-point stop uses it.
@@ -113,12 +116,23 @@ class PlanningConfig(ConfigurableResource):
     # Used to estimate arrival times at successive collection stops from
     # straight-line distance. No congestion is modelled.
     average_driving_speed_kph: float = 30.0
+<<<<<<< Updated upstream
+=======
+    # Time allowed at each stop for people to reach the kerb and board, added to
+    # the meeting time of every stop after it. Travel time alone cannot carry a
+    # schedule here: Thanet's collection legs are 17 m at the median, so a whole
+    # route completes inside 97 seconds and every stop on it reads 08:00 at the
+    # minute resolution a message quotes. Boarding, not driving, is what a
+    # multi-stop pickup actually spends its time on.
+    stop_dwell_minutes: float = 5.0
+>>>>>>> Stashed changes
     # Single fleet-wide evacuation destination. Default is Canterbury, the
     # nearest large centre outside Thanet.
     destination_name: str = "Canterbury"
     destination_latitude: float = 51.2802
     destination_longitude: float = 1.0789
 
+<<<<<<< Updated upstream
     # --- Microsimulation scenario export ------------------------------------
     # Highway classes counted as through routes when qualifying district exits.
     # Service roads, tracks and footways are excluded: a driveway or car-park
@@ -178,6 +192,32 @@ class PlanningConfig(ConfigurableResource):
     # How long a vehicle waits at each home-collection stop.
     # PROVISIONAL: needs a defensible value. See design.md, Open Questions.
     collection_stop_dwell_seconds: float = 120.0
+=======
+    # --- Live re-planning ---------------------------------------------------
+    # A live re-plan measures from where the person is standing, in a straight
+    # line, because it has to answer at the kerb in under a second — the routed
+    # pedestrian graph the original assignment used is not on hand. Street
+    # networks make a walk longer than the crow flies; this scales the straight
+    # line before it is checked against the walking ceiling, so the tool never
+    # sends somebody on a walk the plan itself would have refused.
+    walk_detour_factor: float = 1.3
+    # How long someone waits at the kerb before the tool will accept "they did
+    # not come". Long enough that a slow walk or a wrong door is not reported as
+    # an absence; short enough that a driver is not held at a door indefinitely.
+    no_show_wait_minutes: float = 30.0
+    # How long after its last planned stop a vehicle can still be diverted to
+    # pick somebody up. Beyond this it is treated as gone: it is on the trunk
+    # road out of the district and turning it round costs more than it saves.
+    divert_grace_minutes: float = 15.0
+    # A rescue bus is dispatched to the stranded person rather than expecting
+    # them to walk to it — the people most likely to be stranded are the ones
+    # who could not walk to a muster point in the first place.
+    rescue_bus_capacity: int = 50
+    # Time from the report to the bus reaching the kerb.
+    rescue_bus_delay_minutes: float = 45.0
+    # Two reports this far apart share a bus rather than opening a second one.
+    rescue_bus_pickup_radius_m: float = 1500.0
+>>>>>>> Stashed changes
 
     # --- Storage ------------------------------------------------------------
     # Directory for downloaded source extracts and exported outputs.

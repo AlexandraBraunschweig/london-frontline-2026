@@ -298,18 +298,24 @@ def assign_seats(
 def expand_to_persons(
     seatings: Sequence[Seating],
     members_by_group: dict[int, Sequence[int]],
+<<<<<<< Updated upstream
     licensed_person_ids: set[int] | None = None,
+=======
+>>>>>>> Stashed changes
 ) -> list[PersonSeat]:
     """Hand each group's seats to specific members.
 
     Members are taken in person order and seatings in muster-point order, so a
     split group's members land deterministically and the same run reproduces the
     same allocation.
+<<<<<<< Updated upstream
 
     When a group is split across vehicles and ``licensed_person_ids`` is given,
     one licensed member is placed in each part before the rest are distributed.
     Without that, a family's only driver could land in one car and leave the
     other undrivable — which is the same fault as counting drivers per group.
+=======
+>>>>>>> Stashed changes
     """
     by_group: dict[int, list[Seating]] = defaultdict(list)
     for seat in seatings:
@@ -318,6 +324,7 @@ def expand_to_persons(
     person_seats: list[PersonSeat] = []
     for group_id, group_seatings in by_group.items():
         members = sorted(members_by_group.get(group_id, ()))
+<<<<<<< Updated upstream
         ordered = sorted(group_seatings, key=lambda s: s.muster_point_id)
 
         allocation: dict[int, list[int]] = {
@@ -348,6 +355,20 @@ def expand_to_persons(
                         seat.tier, seat.split,
                     )
                 )
+=======
+        position = 0
+        for seat in sorted(group_seatings, key=lambda s: s.muster_point_id):
+            for _ in range(seat.seats):
+                if position >= len(members):
+                    break
+                person_seats.append(
+                    PersonSeat(
+                        members[position], group_id, seat.muster_point_id,
+                        seat.tier, seat.split,
+                    )
+                )
+                position += 1
+>>>>>>> Stashed changes
     return person_seats
 
 

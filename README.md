@@ -62,10 +62,121 @@ admin_areas -> admin_areas_geojson
             -> dwelling_points
                  (with synthetic_population) -> household_locations -> vehicles
             -> road_centrelines                                     -> muster_points
+<<<<<<< Updated upstream
                                                                     -> district_exits
    ... seat assignment -> vehicle_routes -> vehicle_departures -> matsim_scenario
 ```
 
+=======
+```
+
+### Sending example messages to a phone
+
+`stop_notifications` records who to contact and by which route — `direct`,
+`via_carer`, or `physical_collection` for the people no channel reaches. It stops
+short of the words. `london_frontline.messaging` renders those rows into the two
+messages a plan actually produces (a leader's full route, a passenger's own
+line of it), and `london_frontline.notify` pushes one to an [ntfy](https://ntfy.sh)
+topic.
+
+```bash
+python scripts/send_example_messages.py --dry-run --database data/warehouse.duckdb
+```
+
+Each message carries a Google Maps link in its body: a dropped pin at the
+pickup for a collected passenger, walking directions for a walk-in, and for the
+leader a single directions link covering the parked car, every pickup in plan
+order, and the destination. The links sit in the text rather than in ntfy's
+`click` field, so tapping the notification opens the message and the map stays a
+deliberate second tap.
+
+Add `--topic <name>` to send. Topics on the public ntfy server are readable by
+anyone who knows the name, so the sender refuses topics under 12 characters
+unless you pass `--allow-short-topic`.
+
+Every message carries an EXERCISE banner by default: these plans are built from
+a synthetic population, and an unmarked evacuation order arriving on a real
+phone is indistinguishable from a real one. `--no-exercise-banner` removes it.
+
+ntfy is a demonstration transport, not a dispatch channel — a topic is a shared
+secret with no recipient authentication and no delivery receipt.
+
+Before the pipeline has been materialised there is nothing to render, so a
+throwaway plan can be built in a couple of seconds instead:
+
+```bash
+python scripts/build_demo_warehouse.py
+python scripts/send_example_messages.py --dry-run
+```
+
+That seeds four households in Margate — a driver whose child has no phone, a
+walk-in neighbour, and two residents who cannot walk — then materialises the
+real `vehicle_routes` and `stop_notifications` assets against them, so the
+messages read genuine asset output rather than a fixture.
+
+Its two collection stops are about 390 m apart, on Thanet Road and Osborne
+Terrace. The live plan cannot show that: collection groups are assigned to their
+nearest vehicle, so **no two-pickup route in Thanet has its stops more than
+123 m apart**, and of the 55 widest, only three have both pickups at real
+dwellings on different streets. The demo warehouse exists to show the shape the
+tool produces, not the spread the current allocation achieves.
+
+### When somebody does not turn up
+
+A plan assumes everybody keeps the appointment it made for them. Two ways that
+fails at the kerb: a driver reaches a door and nobody answers it, or a passenger
+waits at a pickup and no car comes. `london_frontline.no_show` closes the loop
+over both, and `london_frontline.no_show_web` is the page it is closed from.
+
+```bash
+python scripts/run_no_show_tool.py
+```
+
+It prints a link of each kind and serves the pages on
+<http://127.0.0.1:8420>. Two rules gate every report, because a wrong one takes
+a real person's seat away:
+
+- **The wait.** `no_show_wait_minutes` (30) must have passed since the meeting
+  time. Tapped earlier, the link shows a countdown and no button.
+- **The phone first.** The report button stays disabled until the caller says
+  the call failed. Where there is nobody to ring — a passenger with no phone and
+  no carer, whom nobody has been able to tell anything — the question becomes
+  whether they knocked.
+
+Then the tool answers with a plan rather than a receipt. A driver gets their
+remaining route, re-timed from now and cut around the door that failed; a
+passenger gets another car if one can still reach them, and a rescue bus sent to
+where they are standing if none can.
+
+The links live in the messages themselves — one under each name on a driver's
+route, one at the foot of a passenger's message:
+
+```bash
+THANET_LINK_SECRET=$(openssl rand -hex 24) python scripts/send_example_messages.py --dry-run --base-url http://127.0.0.1:8420
+```
+
+Both processes must sign with the same key, and only one process at a time may
+hold the incident database open, so set `THANET_LINK_SECRET` in both while the
+tool is running. A link is a bearer capability: whoever holds it can file the
+report it carries. The signature only stops one link being renumbered into
+another person's name — real dispatch would tie a report to an identity a
+control room can challenge.
+
+Reports go to `data/incidents.duckdb`, never to the warehouse: DuckDB permits
+one writer, the pipeline is that writer, and a tool holding the lock would stop
+the plan being rebuilt underneath it. The log is append-only and every revised
+route is derived from it, so re-reading a link cannot book a second seat.
+
+The plan departs at 08:00 on 1 January 2026, so `--now` pins the tool's clock
+onto the plan's timeline; it defaults to a moment where the links are live.
+
+**What it shows about the plan.** With the whole fleet leaving at once, no car
+can be diverted to a stranded passenger: by the time a 30-minute wait is up,
+every other car has been on the road for almost that long, so the answer is
+always the bus. Raise `--divert-grace-minutes` to see the other branch, or stage
+the departures — the same funnel the SUMO run found.
+
+>>>>>>> Stashed changes
 ## Inspecting the warehouse
 
 Everything lands in `data/warehouse.duckdb` (gitignored — it is reproducible from
@@ -141,6 +252,7 @@ COPY (SELECT vehicle_id, snap_distance_m, geometry FROM muster_points USING SAMP
 TO 'data/exports/muster_sample.geojson' WITH (FORMAT GDAL, DRIVER 'GeoJSON');
 ```
 
+<<<<<<< Updated upstream
 ## The traffic microsimulation scenario
 
 `matsim_scenario` writes a MATSim scenario to `data/exports/matsim/`:
@@ -209,6 +321,63 @@ pipeline's.
 comparison metric between the one-car-per-household baseline and the pooled
 scenario. Run both against the same network with the same seed and departure
 profile, or the comparison measures the configuration rather than the pooling.
+=======
+## Traffic microsimulation (SUMO)
+
+`sumo/` runs the comparison the pipeline exists to feed: the ride-shared plan
+against a one-car-per-household baseline, on a real road network.
+
+SUMO ships as pip wheels, so no system install is needed:
+
+```bash
+.venv/bin/python -m pip install eclipse-sumo sumolib traci matplotlib
+```
+
+Then, with the warehouse materialised:
+
+```bash
+curl -sS --max-time 900 -X POST --data-binary @sumo/overpass.ql \
+  https://overpass-api.de/api/interpreter -o data/sumo/thanet.osm.xml
+./sumo/build_network.sh
+.venv/bin/python sumo/make_trips.py baseline
+.venv/bin/python sumo/make_trips.py pooled
+./sumo/run_scenario.sh baseline
+./sumo/run_scenario.sh pooled
+.venv/bin/python sumo/analyse.py
+.venv/bin/python sumo/render_map.py
+.venv/bin/python sumo/build_report.py
+```
+
+The two scenarios share one network, one seeded mobilisation curve and one
+destination, so the only difference between them is which cars depart.
+
+### What it found
+
+Both plans gridlock the district. An hour after the alarm each is moving at 2%
+of the speed limit with about four-fifths of cars stationary. The ride-shared
+plan does put 2,385 fewer cars on the road (5.2%) and carries 24,038 more people
+— the baseline strands every household that owns no car — but neither changes
+the jam.
+
+Two things matter more than the fleet size, and both are worth fixing before
+this comparison is run again:
+
+- **The single destination.** Every vehicle routes to the one Canterbury point
+  in `PlanningConfig`, so the whole district drains through the same few
+  arterials and only ~5,400 of 27,000 road links carry any traffic at all. That
+  funnel, not the number of cars, decides the outcome.
+- **Simultaneous departure.** `fleet_departure_time` is a single instant.
+  Released that way the district seizes completely under *both* plans — 3% of
+  the speed limit, ~35,000 cars stationary, 49 of 45,960 arrived after 20
+  minutes. The default run therefore spreads departures over a 60-minute
+  mobilisation curve; `--instant` reproduces the literal reading.
+
+The 5.2% saving is itself the point `minimise-evacuation-vehicles` makes: the
+current tiered assignment puts every car-owning household in its own car, so it
+was never going to take many cars off the road. Re-running this against that
+change's target of ~25,600 cars is the comparison that would actually test the
+ride-share hypothesis.
+>>>>>>> Stashed changes
 
 ## Known limitations
 
@@ -225,6 +394,7 @@ These are real and recorded, not oversights:
 - **Snap distances are inflated by OSM gaps.** Many residential access roads,
   service roads and driveways are unmapped, so ~19,000 cars park more than 20 m
   from their home. No vehicle is dropped for this; the distance is reported.
+<<<<<<< Updated upstream
 
 ### Limitations of the microsimulation scenario
 
@@ -254,3 +424,5 @@ with the figure:
   over about 143 minutes. Recalibrating changes no code.
 - **Collection-stop dwell is provisional too**, at 120 s.
 - **No background traffic.** The scenario contains evacuating vehicles only.
+=======
+>>>>>>> Stashed changes
