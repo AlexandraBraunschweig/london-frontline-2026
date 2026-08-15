@@ -1,0 +1,59 @@
+name: Deploy viewer to GitHub Pages
+
+# The viewer is a static build of viz/, reading the committed bundle in
+# viz/public/data. The pipeline itself is not run here: it downloads hundreds of
+# megabytes from ONS, OS and Overpass and takes minutes, so the data is a
+# committed artefact rather than a CI product.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'viz/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never let two deployments race; the newer one wins.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: viz/package-lock.json
+
+      - name: Install
+        working-directory: viz
+        run: npm ci
+
+      - name: Typecheck and build
+        working-directory: viz
+        run: npm run build
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: viz/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
