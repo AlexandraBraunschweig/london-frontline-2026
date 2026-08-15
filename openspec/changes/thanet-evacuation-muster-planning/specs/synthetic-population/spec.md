@@ -38,7 +38,7 @@ Each synthetic Person SHALL have a boolean mobility_status attribute indicating 
 
 #### Scenario: Mobility status drives routing mode
 - **WHEN** a person's mobility_status is false
-- **THEN** that person SHALL be excluded from walking-based muster-point assignment and SHALL instead require home collection (see `muster-point-assignment` and `leader-route-planning`)
+- **THEN** that person SHALL be excluded from walking-based seat assignment and SHALL instead require home collection (see `evacuation-seat-assignment` and `leader-route-planning`)
 
 ### Requirement: Co-resident parent identification
 Marginal-only synthesis produces household membership but not kinship, so the system SHALL derive co-resident parenthood by rule. Within a household containing a person under 16, that person's co-resident parents SHALL be identified as the one or two oldest household members who are at least a configured minimum parent-child age gap (default 16 years) older than that person. A household with no member meeting that condition SHALL be recorded as having no co-resident parent for that child, rather than assigning an implausible parent.
@@ -55,7 +55,7 @@ Marginal-only synthesis produces household membership but not kinship, so the sy
 The system SHALL represent person-to-person relationships in a normalized `person_relationships` table (person_id, related_person_id, relationship_type) rather than as a list-valued field on Person. Within each household, the system SHALL derive `dependent_of` edges by age band, using the co-resident parents identified above:
 - a person under 10 SHALL have a mandatory `dependent_of` edge to both co-resident parents where present;
 - a person aged 10 up to (not including) 16 SHALL have a mandatory `dependent_of` edge to at least one co-resident parent;
-- a person aged 16 or over SHALL NOT have a mandatory `dependent_of` edge to any household member, and MAY be linked instead to a different travel group during downstream assignment (see `evacuation-vehicle-packing`).
+- a person aged 16 or over SHALL NOT have a mandatory `dependent_of` edge to any household member, and MAY be linked instead to a different travel group during downstream assignment (see `evacuation-seat-assignment`).
 
 The system SHALL compute indivisible travel groups as the connected components formed by mandatory `dependent_of` edges within a household.
 

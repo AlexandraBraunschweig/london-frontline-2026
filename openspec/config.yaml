@@ -12,8 +12,17 @@ context: |
   reference project.
 
   Data sources are open-data only: ONS Census 2021 OA-level tables, ONS geography
-  boundaries API, OS Open UPRN, Overture (Buildings, Places), OpenStreetMap.
-  Never propose scraping council portals or any authenticated/licensed source.
+  boundaries API, ONS National Statistics UPRN Lookup (NSUL), OS Open UPRN, OS Open
+  USRN, OpenStreetMap. Never propose scraping council portals or any authenticated
+  or licensed source (AddressBase in particular).
+
+  Address facts that are easy to get wrong: OS Open UPRN contains only UPRN plus
+  coordinates — no house number, street, or postcode. Real addresses are AddressBase
+  and therefore out of bounds. Household addresses are SYNTHETIC: a generated
+  building number plus the nearest OS Open USRN street name, always flagged as such.
+  UPRNs are allocated to Output Areas by joining NSUL, never by local point-in-polygon
+  intersection, so the geography matches what the Census marginals are published
+  against. Overture Buildings is deliberately not used.
 
   Modeling conventions:
   - A muster point IS a single parked car, at the nearest drivable road point

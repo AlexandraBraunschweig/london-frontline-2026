@@ -6,7 +6,7 @@ See proposal.md - Why. This is a greenfield repository (no existing code or spec
 
 **Goals:**
 - Produce a synthetic population, household, and relationship graph for LAD `E07000114` matched to ONS Census 2021 Output-Area marginals, including contact/identification attributes (phone, name), a skill attribute (medical_skill), and a boolean mobility_status.
-- Assign every synthetic household a real, open-data-sourced home location, including a human-readable address.
+- Assign every synthetic household a real, open-data-sourced home location, with a synthetic but plausible human-readable address.
 - Generate a vehicle per household car, park it on the road beside its owner's home, and treat that parking spot as a muster point.
 - Split travel groups into home-collection (any member can't walk) vs. walk-in, and allocate every person to a specific vehicle's seat in one tiered pass.
 - Track and report unmet demand rather than hiding it.
@@ -35,8 +35,20 @@ A direct consequence of the decision above: with exactly one vehicle per muster 
 **Pipeline pattern: Dagster + DuckDB (spatial extension), reusing the `northcray/data` pattern.**
 Alternative considered: a different orchestrator (e.g. Airflow) or a plain script pipeline. Rejected — the Dagster/DuckDB combination is already proven in the reference project and introduces no new infrastructure.
 
-**Address source: OS Open UPRN → Overture Buildings → OSM fallback chain, explicitly not the council-portal scrape.**
+**Dwelling source: OS Open UPRN alone, with no building-footprint fallback.**
+The first draft specified an OS Open UPRN → Overture Buildings → OSM fallback chain. Dropped, because the fallback was justified by a case that does not arise: OS Open UPRN is derived from AddressBase and covers every addressable object in GB, so an Output Area with no UPRN coverage is not a real scenario, and the fallback branch would never execute. Overture Buildings was also partly justified by the address requirement, which it cannot serve — it carries no addresses either (Overture's addresses are a separate theme). Keeping the chain meant two extra ingestion assets, a reverse-geocoding step, and an untestable branch, in exchange for nothing.
+
+**No council-portal scrape.**
 Alternative considered: keep the `northcray/data` Playwright scrape of the Bexley planning portal for richer per-property detail. Rejected — it is fragile, ToS-grey-area, hard-coupled to one council's website, and the extra detail (e.g. property description) isn't needed for evacuation planning. Open data also generalizes to any LAD without bespoke per-council code.
+
+**UPRN → Output Area via NSUL, not local point-in-polygon.**
+ONS publishes the National Statistics UPRN Lookup, mapping every GB UPRN to OA/LSOA/MSOA/LAD, refreshed roughly every six weeks, with an OA21 version matching the 2021 Census geography. Alternative considered: spatially intersect OS Open UPRN coordinates against the OA boundaries already ingested for geometry. Rejected — ONS has done exactly this allocation already, and doing it locally risks producing a slightly different OA assignment than the one the Census marginals are published against, which would silently corrupt the marginal-matching validation. A join is also cheaper than a point-in-polygon over a GB-scale point set.
+
+**Addresses are synthetic, derived from OS Open USRN street names.**
+OS Open UPRN provides five fields — UPRN, easting, northing, latitude, longitude — and no address whatsoever. The first draft required populating each household's address "from the linked UPRN address where available", which does not exist; real addresses are AddressBase, which is licensed. Alternatives considered: (a) drop the address requirement and carry coordinates only — rejected because drill output needs a findable human-readable location; (b) use OSM `addr:*` tags — rejected as patchily covered and, where present, a real address implying a real resident. Chosen instead: the nearest OS Open USRN street gives a real Thanet street name, combined with a generated building number and flagged as synthetic. This is the honest framing — a synthetic population should have a synthetic address — and it needs one spatial join against a dataset the reference project already handles.
+
+**Non-residential UPRNs are accepted, not filtered.**
+OS Open UPRN has no classification field, so houses, shops, and parent-shell records for blocks of flats are indistinguishable. Filtering would require intersecting with building footprints — the one legitimate use for Overture Buildings, as a refinement rather than a fallback. Deferred: a household placed at a commercial UPRN still sits on a real point, on the right street, in the right Output Area, which is all the downstream congestion model consumes, and UPRN counts per OA comfortably exceed household counts so a random draw dilutes the effect. Reported as a ratio rather than engineered away.
 
 **Synthesis granularity: Output Area (OA), not LSOA.**
 OA is the finest published UK census geography and gives seat-assignment catchments household-level spatial precision. Trade-off: OA-level 2021 Census tables carry more disclosure-control suppression/rounding than LSOA-level tables — accepted (see Risks).
@@ -83,7 +95,8 @@ Generated on Person but read by nothing here. Kept deliberately (it is one cheap
 ## Risks / Trade-offs
 
 - [Risk] OA-level Census 2021 marginals may be suppressed or rounded by ONS disclosure control for small/rare cells, making exact marginal matching impossible for some Output Areas → Mitigation: fall back to LSOA-level marginals as a disaggregation prior for affected OAs, and record which OAs required the fallback.
-- [Risk] OS Open UPRN coverage may be incomplete in some Thanet Output Areas (e.g. recent new-build areas) → Mitigation: the Overture/OSM fallback chain already covers this; record which OAs used it.
+- [Risk] Some synthetic households will be placed at non-residential UPRNs (shops, offices, parent-shell records for blocks of flats), since OS Open UPRN carries no classification → Mitigation: report the UPRN-to-household ratio per Output Area; the effect is diluted by surplus UPRNs and does not affect the point's street or Output Area, which is what the downstream model consumes.
+- [Risk] NSUL is refreshed on its own schedule (roughly six-weekly) and is keyed to an AddressBase epoch, so a UPRN present in OS Open UPRN may be missing from the NSUL edition in use, or vice versa → Mitigation: join on UPRN, exclude unmatched records from the candidate pool, and count them in the ingestion summary rather than dropping them silently.
 - [Risk] The 20 m parking snap may fail for homes set back from the road (rural properties, large estates, flats behind service roads), removing their vehicle from the fleet entirely → Mitigation: report the unresolved-parking rate as a summary metric; if it is material, the snap distance is a single config value to revisit.
 - [Risk] With one vehicle per muster point, seat supply is fragmented — a carless household surrounded by full cars is unseated even if spare seats exist just outside its 10-minute ceiling → Mitigation: this is a real property of the scenario being modeled, not an artifact; report unmet demand per Output Area so its spatial pattern is visible.
 - [Risk] The oversized-group split could become common in dense terraced-housing OAs with large multi-generational households and only one car, undermining the "families aren't split" goal in practice → Mitigation: report the split rate as a summary metric rather than letting it pass silently.

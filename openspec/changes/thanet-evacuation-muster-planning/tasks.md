@@ -32,11 +32,14 @@
 
 ## 5. Home location assignment
 
-- [ ] 5.1 Asset: pull OS Open UPRN points clipped to each Output Area
-- [ ] 5.2 Asset: pull Overture Buildings and OSM address/building points clipped to each Output Area, for use where OS Open UPRN coverage is missing
-- [ ] 5.3 Implement assignment: one household per dwelling point, OS Open UPRN preferred, falling back to Overture/OSM per Output Area
-- [ ] 5.4 Populate each assigned household's human-readable address string from the linked UPRN address or a reverse-geocode of the fallback point
-- [ ] 5.5 Record Output Areas where synthetic household count exceeds available dwelling points as a home-location shortfall, rather than over-assigning silently
+- [ ] 5.1 Asset: pull the ONS National Statistics UPRN Lookup (OA21 version) and filter to the configured LAD, giving the UPRN → Output Area allocation
+- [ ] 5.2 Asset: pull OS Open UPRN and join to 5.1 on UPRN for coordinates; count and report UPRNs present in one source but not the other rather than dropping them silently
+- [ ] 5.3 Implement assignment: one synthetic household per UPRN, drawn from the candidate UPRNs of that household's Output Area
+- [ ] 5.4 Asset: pull OS Open USRN street geometry and names for the LAD
+- [ ] 5.5 Populate each household's synthetic address: generated building number plus the name of the nearest USRN street, flagged as synthetic; fall back to Output Area code plus UPRN where the nearest street is unnamed
+- [ ] 5.6 Record Output Areas where synthetic household count exceeds available UPRNs as a home-location shortfall, rather than over-assigning silently
+- [ ] 5.7 Record the UPRN-to-household ratio per Output Area, as the visible proxy for non-residential UPRN contamination
+- [ ] 5.8 Write a test confirming every assigned household's UPRN has an NSUL Output Area code equal to the household's own Output Area code
 
 ## 6. Vehicles and muster points
 
@@ -82,5 +85,5 @@
 - [ ] 10.2 Summary report: seat utilisation and occupants-per-vehicle distribution — the headline number the ride-share hypothesis turns on
 - [ ] 10.3 Summary report: travel-group split rate (from the oversized-group exception), to catch it becoming common rather than exceptional
 - [ ] 10.4 Summary report: collection stops per vehicle (distribution), to catch the spreading rule failing in practice
-- [ ] 10.5 Summary report: Vehicles excluded for unresolved parking (6.5), households with no qualifying co-resident parent (4.1), Output Areas that required an LSOA marginal fallback (2.3) or a non-UPRN dwelling source (5.3)
+- [ ] 10.5 Summary report: Vehicles excluded for unresolved parking (6.5), households with no qualifying co-resident parent (4.1), home-location shortfalls and UPRN-to-household ratios (5.6, 5.7), UPRN/NSUL join misses (5.2), and Output Areas that required an LSOA marginal fallback (2.3)
 - [ ] 10.6 End-to-end run for LAD `E07000114`, producing the full population, home-location, vehicle/muster-point, seat-assignment, and leader-route output ready for a later traffic-microsimulation change to consume
