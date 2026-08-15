@@ -1,32 +1,36 @@
 schema: spec-driven
 
-# Project context (optional)
-# This is shown to AI when creating artifacts.
-# Add your tech stack, conventions, style guides, domain knowledge, etc.
-# Example:
-#   context: |
-#     Tech stack: TypeScript, React, Node.js
-#     We use conventional commits
-#     Domain: e-commerce platform
+context: |
+  Domain: synthetic population generation and evacuation ride-share planning for UK
+  Local Authority Districts. First target: Thanet District Council, LAD E07000114.
+  The output feeds a later traffic microsimulation (UDST MANTA) comparing a
+  one-car-per-household evacuation baseline against a ride-shared scenario.
 
-# Per-artifact rules (optional)
-# Add custom rules for specific artifacts.
-# Example:
-#   rules:
-#     proposal:
-#       - Keep proposals under 500 words
-#       - Always include a "Non-goals" section
-#     tasks:
-#       - Break tasks into chunks of max 2 hours
+  Tech stack: Python, Dagster (assets), DuckDB with the spatial extension,
+  pandana/osmnet for pedestrian network queries, networkx for graph work over the
+  person_relationships edge table. Pipeline pattern follows the `northcray/data`
+  reference project.
 
-# Per-operation guidance (optional)
-# Add advisory guidance for how apply and archive work should be conducted.
-# This is separate from artifact rules above.
-# Example:
-#   operations:
-#     apply:
-#       guidance:
-#         - Keep test summaries concise
-#     archive:
-#       guidance:
-#         - Summarize the archive outcome before finishing
+  Data sources are open-data only: ONS Census 2021 OA-level tables, ONS geography
+  boundaries API, OS Open UPRN, Overture (Buildings, Places), OpenStreetMap.
+  Never propose scraping council portals or any authenticated/licensed source.
+
+  Modeling conventions:
+  - A muster point IS a single parked car, at the nearest drivable road point
+    within 20 m of its owner household's home. There is no catalog of gathering
+    sites, and no site capacity distinct from that car's seats.
+  - Geography is modeled as a generic AdminArea{level, parent_id, geometry} so the
+    schema ports to non-UK census hierarchies.
+  - Every threshold (capacities, distances, ceilings, ages, speeds, times) is a
+    named config value, not a literal in the algorithm.
+  - Shortfalls are outputs, not exceptions: anything that cannot be satisfied
+    (unseated people, unresolved parking, missing dwellings, suppressed marginals)
+    is recorded and reported rather than silently absorbed or force-fitted.
+
+rules:
+  proposal:
+    - State what is explicitly deferred to a future iteration, not just what is built
+  design:
+    - Every decision must name the alternative considered and why it was rejected
+  tasks:
+    - Every algorithmic requirement needs a matching test task

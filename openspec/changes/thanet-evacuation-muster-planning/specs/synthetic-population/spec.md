@@ -5,7 +5,7 @@ Generates a synthetic population of persons and households for a UK Local Author
 ## ADDED Requirements
 
 ### Requirement: Person and household generation matched to Census marginals
-The system SHALL generate synthetic Person records (age, sex, license_type, has_car) and Household records (composition_type, num_persons, num_cars) for each Output Area within a specified LAD, such that aggregate counts match published ONS Census 2021 Output-Area-level marginal tables for age/sex distribution, household composition, and car availability.
+The system SHALL generate synthetic Person records (age, sex, license_type) and Household records (composition_type, num_persons, num_cars) for each Output Area within a specified LAD, such that aggregate counts match published ONS Census 2021 Output-Area-level marginal tables for age/sex distribution, household composition, and car availability.
 
 #### Scenario: Aggregate age/sex match
 - **WHEN** the population is generated for a given Output Area
@@ -15,12 +15,16 @@ The system SHALL generate synthetic Person records (age, sex, license_type, has_
 - **WHEN** households are generated for an Output Area
 - **THEN** the distribution of household composition types SHALL match that Output Area's published household composition marginal within rounding tolerance
 
-### Requirement: License type and has-car attribution
-Each synthetic Person SHALL have a license_type attribute with value `none`, `car`, or `bus`, derived from a configured minimum UK driving-age threshold and a license-holding proportion. Each Household SHALL have a num_cars attribute matched to its Output Area's car-availability marginal.
+### Requirement: License type and car ownership
+Each synthetic Person SHALL have a license_type attribute with value `none`, `car`, or `bus`, derived from a configured minimum UK driving-age threshold and a license-holding proportion. Car ownership SHALL be represented only at household level, as the Household `num_cars` attribute matched to its Output Area's car-availability marginal; Person SHALL NOT carry a separate car-ownership attribute.
 
 #### Scenario: Under-driving-age person
 - **WHEN** a synthetic person's age is below the configured minimum driving age
 - **THEN** license_type SHALL be `none`
+
+#### Scenario: Car ownership has a single source of truth
+- **WHEN** the number of cars available to a person is needed downstream
+- **THEN** it SHALL be read from that person's Household `num_cars`, there being no person-level car attribute that could disagree with it
 
 ### Requirement: Contact, identification, and skill attributes
 Each synthetic Person SHALL have phone_number and name attributes to support coordination and physical identification at a meeting point, and a medical_skill boolean attribute.
@@ -36,8 +40,19 @@ Each synthetic Person SHALL have a boolean mobility_status attribute indicating 
 - **WHEN** a person's mobility_status is false
 - **THEN** that person SHALL be excluded from walking-based muster-point assignment and SHALL instead require home collection (see `muster-point-assignment` and `leader-route-planning`)
 
+### Requirement: Co-resident parent identification
+Marginal-only synthesis produces household membership but not kinship, so the system SHALL derive co-resident parenthood by rule. Within a household containing a person under 16, that person's co-resident parents SHALL be identified as the one or two oldest household members who are at least a configured minimum parent-child age gap (default 16 years) older than that person. A household with no member meeting that condition SHALL be recorded as having no co-resident parent for that child, rather than assigning an implausible parent.
+
+#### Scenario: Two qualifying adults present
+- **WHEN** a household contains a person under 16 and two or more members at least the configured age gap older
+- **THEN** the two oldest such members SHALL be recorded as that person's co-resident parents
+
+#### Scenario: No qualifying adult present
+- **WHEN** a household contains a person under 16 and no member is at least the configured age gap older
+- **THEN** that person SHALL be recorded as having no co-resident parent, and the household SHALL be reported in the synthesis summary
+
 ### Requirement: Person relationships and indivisible travel groups
-The system SHALL represent person-to-person relationships in a normalized `person_relationships` table (person_id, related_person_id, relationship_type) rather than as a list-valued field on Person. Within each household, the system SHALL derive `dependent_of` edges by age band:
+The system SHALL represent person-to-person relationships in a normalized `person_relationships` table (person_id, related_person_id, relationship_type) rather than as a list-valued field on Person. Within each household, the system SHALL derive `dependent_of` edges by age band, using the co-resident parents identified above:
 - a person under 10 SHALL have a mandatory `dependent_of` edge to both co-resident parents where present;
 - a person aged 10 up to (not including) 16 SHALL have a mandatory `dependent_of` edge to at least one co-resident parent;
 - a person aged 16 or over SHALL NOT have a mandatory `dependent_of` edge to any household member, and MAY be linked instead to a different travel group during downstream assignment (see `evacuation-vehicle-packing`).

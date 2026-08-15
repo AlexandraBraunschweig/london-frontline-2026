@@ -7,65 +7,89 @@ See proposal.md - Why. This is a greenfield repository (no existing code or spec
 **Goals:**
 - Produce a synthetic population, household, and relationship graph for LAD `E07000114` matched to ONS Census 2021 Output-Area marginals, including contact/identification attributes (phone, name), a skill attribute (medical_skill), and a boolean mobility_status.
 - Assign every synthetic household a real, open-data-sourced home location, including a human-readable address.
-- Generate a vehicle per car-owning household, with type and identification (license plate).
-- Split travel groups into home-collection (any member can't walk) vs. walk-in, and build a muster-point catalog plus a capacitated, priority-weighted walking-distance assignment for walk-in groups.
-- Produce a tiered, single-wave vehicle-packing plan per muster point's catchment, with unmet demand tracked and reported rather than hidden.
-- Produce a per-vehicle leader and route (stops, meeting times, people lists, destination) that minimizes and spreads home-collection stops across the fleet, plus the phone/carer notification-fallback rule.
+- Generate a vehicle per household car, park it on the road beside its owner's home, and treat that parking spot as a muster point.
+- Split travel groups into home-collection (any member can't walk) vs. walk-in, and allocate every person to a specific vehicle's seat in one tiered pass.
+- Track and report unmet demand rather than hiding it.
+- Produce a per-vehicle leader and route (stops, meeting times, people lists, destination) plus the phone/carer notification-fallback rule.
 - Keep the schema portable to other countries' census geography, even though every data source used here is UK-specific.
 
 **Non-Goals:**
 - Running the downstream traffic microsimulation (e.g. MANTA) that compares baseline vs. pooled-ride congestion — a separate, later change consumes this one's output.
 - Modeling day/night activity-based starting positions (work/school locations) — starting position equals home location for this iteration.
 - Modeling return trips or relay waves — single departure per vehicle only.
+- Network-routed driving times or congestion modeling — straight-line estimates only.
+- Multiple evacuation destinations, or destination capacity constraints — one fleet-wide destination.
 - A realistic vehicle-capacity distribution — a single fixed capacity value is used.
 - Resolving the UK census microdata (SARs) licensing question for a full IPU-style seed-sample synthesis — resolved in favor of marginal-only synthesis for this iteration (see Decisions).
-- Numeric vulnerability_score or leadership_score models — both use simple rule-based checks this iteration (mobility_status/age bands for vulnerability, license_type = car for leader eligibility).
+- Numeric vulnerability_score or leadership_score models — both use simple rule-based checks this iteration (mobility_status for collection mode, license_type = car for leader eligibility).
 - Full bus modeling (a bus's route start point differing from any owner's household), in-app route/pickup confirmation mechanisms (leader/passenger "confirm route" and pickup logging), and a trust-network model for who someone would prefer to ride with — all explicitly future work, not built now.
 
 ## Decisions
+
+**A muster point is a parked car, not a site.**
+Each vehicle is parked at the nearest drivable road point within a configured snap distance (default 20 m) of its owner household's home, and that point is a muster point with capacity equal to that one vehicle's seats. Alternative considered, and rejected: a catalog of candidate gathering sites (schools, community centres, car parks) derived from Overture Places / OSM POI tags, each holding many vehicles. That version was rejected on three grounds. First, it defined a site's capacity as "the sum of the capacities of the vehicles positioned there" while vehicles only arrive at a site because their household was assigned to it — a circular definition with no fixed point. Second, it required a POI catalog plus a manual-review checkpoint against real Thanet evacuation knowledge, an unresolved external dependency. Third, it introduced two granularities (site, then vehicle) for what is one decision. Parking each car beside its owner's home makes seat supply well-defined by construction, needs no catalog, and models the actual ride-share behavior being tested: you walk to a neighbour's car.
+
+**Muster-point assignment and vehicle packing are a single capability.**
+A direct consequence of the decision above: with exactly one vehicle per muster point, "which muster point does this person go to" and "which seat does this person take" are the same question. Keeping them as two capabilities meant two specs owning one decision — and in the first draft they disagreed, with home-collection individuals allocated to a vehicle once by the packing tier and again by the route planner's stop-spreading objective. They are now one tiered pass in `evacuation-seat-assignment`, and `leader-route-planning` makes no allocation decisions at all.
 
 **Pipeline pattern: Dagster + DuckDB (spatial extension), reusing the `northcray/data` pattern.**
 Alternative considered: a different orchestrator (e.g. Airflow) or a plain script pipeline. Rejected — the Dagster/DuckDB combination is already proven in the reference project and introduces no new infrastructure.
 
 **Address source: OS Open UPRN → Overture Buildings → OSM fallback chain, explicitly not the council-portal scrape.**
-Alternative considered: keep the `northcray/data` Playwright scrape of the Bexley planning portal for richer per-property detail. Rejected — it is fragile, ToS-grey-area, hard-coupled to one council's website, and the extra detail (e.g. property description) isn't needed for muster-point planning. Open data also generalizes to any LAD without bespoke per-council code.
+Alternative considered: keep the `northcray/data` Playwright scrape of the Bexley planning portal for richer per-property detail. Rejected — it is fragile, ToS-grey-area, hard-coupled to one council's website, and the extra detail (e.g. property description) isn't needed for evacuation planning. Open data also generalizes to any LAD without bespoke per-council code.
 
 **Synthesis granularity: Output Area (OA), not LSOA.**
-OA is the finest published UK census geography and gives muster-point catchments household-level spatial precision. Trade-off: OA-level 2021 Census tables carry more disclosure-control suppression/rounding than LSOA-level tables — accepted (see Risks).
+OA is the finest published UK census geography and gives seat-assignment catchments household-level spatial precision. Trade-off: OA-level 2021 Census tables carry more disclosure-control suppression/rounding than LSOA-level tables — accepted (see Risks).
 
-**Population-synthesis method: marginal-only proportional synthesis (IPF-style), matching ONS Census 2021 OA tables directly, with no household+person seed sample.**
-Alternative considered: full IPU (as used by UDST's `synthpop`, adapted from US ACS/PUMS to UK inputs), which would need a household+person joint seed sample — the UK equivalent being ONS Census 2021 microdata / Samples of Anonymised Records. Rejected for this iteration: SARs access/licensing is an unresolved external dependency that would block synthesis entirely until cleared, whereas marginal-only proportional fitting needs no seed sample and matches the same externally observable behavior specified in `synthetic-population/spec.md` (aggregate marginal match, dependency relationships). Trade-off: weaker joint-attribute realism (e.g. exact age-by-composition correlations) than a full IPU synthesis would give. Revisiting with a real seed sample later is an isolated change to this capability's implementation, not to its spec.
+**Population-synthesis method: independent per-attribute sampling from ONS Census 2021 OA marginals, with no household+person seed sample.**
+Named precisely: without a seed contingency table this is not IPF, it is independent sampling from marginals constrained to OA totals. Alternative considered: full IPU (as used by UDST's `synthpop`, adapted from US ACS/PUMS to UK inputs), which would need a household+person joint seed sample — the UK equivalent being ONS Census 2021 microdata / Samples of Anonymised Records. Rejected for this iteration: SARs access/licensing is an unresolved external dependency that would block synthesis entirely until cleared, whereas marginal-only sampling needs no seed and matches the same externally observable behavior specified in `synthetic-population/spec.md` (aggregate marginal match, dependency relationships). Trade-off: weaker joint-attribute realism (e.g. exact age-by-composition correlations) than a full IPU synthesis would give. Revisiting with a real seed sample later is an isolated change to this capability's implementation, not to its spec.
 
-**Two-tier muster-point assignment (Class A/B) and three-tier vehicle packing (family/vulnerable/flexible) as the same priority principle applied at two granularities.**
-Chosen for consistency and because it directly encodes the proposal's rule set: protect people who can't compensate (dependents, vulnerable), let flexible independent adults absorb distance and capacity slack. Alternative considered: a single combined optimization (e.g. joint facility-location + bin-packing solved together) — rejected for this iteration as unnecessary complexity; the two-stage greedy approach is simpler to validate and matches how the rules were originally specified.
-
-**No return waves: exactly one departure per vehicle.**
-Removes the feedback loop between wave-scheduling and congestion-dependent realized cycle time, which would otherwise require resolving this change jointly with the out-of-scope traffic microsimulation. Trade-off: any shortfall becomes unmet demand rather than being resolved by a second trip — accepted, and made a first-class, visible output (see `evacuation-vehicle-packing/spec.md`) rather than an implicit gap.
-
-**Vehicle capacity: single hardcoded value, not a distribution.**
-Keeps the packing algorithm's correctness validation deterministic while it's first being proven, without capacity variance as a confounding variable. Swapping in a sampled distribution later is a small, isolated change.
-
-**Vulnerability/collection-mode signal: boolean `mobility_status` (can walk / can't walk), no separate age threshold or numeric score.**
-`mobility_status = false` is now the single trigger for home-collection routing (see below), not a general-purpose "vulnerability" flag. Keeps one source of truth per person rather than several independently defined signals that could disagree. Trade-off, accepted for this iteration: a walkable person living alone (e.g. an independent elderly resident with no mobility impairment) receives no special muster-point or seating priority beyond Class A/B — this is a direct consequence of deferring vulnerability_score, not an oversight, and is easy to revisit once scoring is in scope.
+**Co-resident parenthood is derived by an explicit rule, because marginal-only synthesis does not produce kinship.**
+The dependency graph needs to know who a child's parents are, but sampling from marginals yields only household membership and ages. A person under 16's co-resident parents are therefore defined as the one or two oldest household members at least a configured age gap (default 16 years) older. Households where no member qualifies are reported rather than given an implausible parent. Alternative considered: leaving parenthood implicit and treating whole households as travel groups — rejected because it would bind 16+ members mandatorily, contradicting the explicit goal that independent adults can join another family's car.
 
 **Person relationships: a normalized `person_relationships` edge table (person_id, related_person_id, relationship_type), not a list-valued `dependent_on` field on Person.**
 Alternative considered: storing dependents as a list column (DuckDB supports a native `LIST` type). Rejected — a list column can't have referential integrity enforced on its elements, makes reverse lookups ("who depends on me") an unnest-and-scan instead of an indexed join, and the spec already requires computing indivisible travel groups as graph connected components, which wants an edge list feeding a Python graph library (e.g. `networkx`) inside a Dagster asset, not a SQL unnest. The same table shape also accommodates the future trust-network extension (a different `relationship_type` value) with no schema change.
 
-**Collection-mode split: any travel group containing a member with `mobility_status = false` is routed entirely as home-collection, not split by member.**
-A group can't be partly walked in and partly driven-and-collected without contradicting the "families aren't split" goal, so group-level mobility (any non-walker forces the whole group to home-collection) was chosen over person-level routing within a group. This also means `muster-point-assignment`'s Class A/B walking-distance logic only ever applies to groups where everyone can walk.
+**Car ownership lives only on Household.**
+The first draft carried both a Person `has_car` and a Household `num_cars`. Census car availability (TS045) is a household-level table, so the person-level field was a derived duplicate that could disagree with its source and had no consuming requirement. Dropped.
 
-**Leader and vehicle-occupant driver checks use `license_type = car`, not a separate `can_drive` boolean.**
-`license_type` (none/car/bus) subsumes the earlier simpler `can_drive` boolean from this same schema's first draft; bus licensing is carried in the schema now for forward compatibility with future bus modeling, even though bus routing itself is out of scope this iteration.
+**Tier order: owner household → walk-in with dependents → home-collection → independent walk-in adults.**
+The owner household goes first because the car is theirs and is parked at their door; putting anyone else in it first would be both unfair and physically odd. After that the order encodes the proposal's priority principle: protect people who can't compensate, let flexible independent adults absorb distance and capacity slack. Alternative considered: a single combined optimization (joint facility-location + bin-packing) — rejected for this iteration as unnecessary complexity; the greedy tiered pass is simpler to validate.
+
+**Class B load-balancing is not a separate requirement.**
+The first draft had a requirement letting Class B (independent-adult) groups be rerouted to a farther muster point to preserve capacity for Class A groups. Since all Class A groups are now assigned before any Class B group across the whole LAD, that behavior falls out of the tier order automatically. The requirement was also written with MAY, making it untestable while still carrying a test task. Deleted.
+
+**No return waves: exactly one departure per vehicle.**
+Removes the feedback loop between wave-scheduling and congestion-dependent realized cycle time, which would otherwise require resolving this change jointly with the out-of-scope traffic microsimulation. Trade-off: any shortfall becomes unmet demand rather than being resolved by a second trip — accepted, and made a first-class, visible output rather than an implicit gap.
+
+**Straight-line distance for home collection and stop timing; no routed driving graph.**
+Home-collection proximity only ranks candidate vehicles, and meeting times are advisory in a model with no congestion. Building an OSM road graph and `pandana` driving-time queries to serve those two uses would add an external dependency for no observable gain. Road data is still ingested, but only as line geometry for the 20 m parking snap. The routed driving model belongs to the downstream microsimulation, which needs it anyway.
+
+**Vehicle capacity: single hardcoded value, not a distribution.**
+Keeps the packing algorithm's correctness validation deterministic while it's first being proven, without capacity variance as a confounding variable. Swapping in a sampled distribution later is a small, isolated change.
+
+**Collection-mode signal: boolean `mobility_status` (can walk / can't walk), no separate age threshold or numeric score.**
+`mobility_status = false` is the single trigger for home-collection routing, not a general-purpose "vulnerability" flag. Keeps one source of truth per person rather than several independently defined signals that could disagree. Trade-off, accepted for this iteration: a walkable person living alone (e.g. an independent elderly resident with no mobility impairment) receives no seating priority beyond the tier order — a direct consequence of deferring vulnerability_score, easy to revisit once scoring is in scope.
+
+**Collection-mode split is group-level: any travel group containing a member with `mobility_status = false` is routed entirely as home-collection.**
+A group can't be partly walked in and partly collected without contradicting the "families aren't split" goal, so group-level mobility was chosen over person-level routing within a group.
+
+**Leader and driver checks use `license_type = car`, not a separate `can_drive` boolean.**
+`license_type` (none/car/bus) subsumes the earlier `can_drive` boolean; bus licensing is carried in the schema for forward compatibility with future bus modeling, even though bus routing itself is out of scope this iteration.
+
+**`medical_skill` is carried without a consuming requirement this iteration.**
+Generated on Person but read by nothing here. Kept deliberately (it is one cheap column, and triage-aware seating is plausible future work) but noted so it is not mistaken for an orphan attribute a requirement forgot to reference.
 
 ## Risks / Trade-offs
 
 - [Risk] OA-level Census 2021 marginals may be suppressed or rounded by ONS disclosure control for small/rare cells, making exact marginal matching impossible for some Output Areas → Mitigation: fall back to LSOA-level marginals as a disaggregation prior for affected OAs, and record which OAs required the fallback.
 - [Risk] OS Open UPRN coverage may be incomplete in some Thanet Output Areas (e.g. recent new-build areas) → Mitigation: the Overture/OSM fallback chain already covers this; record which OAs used it.
-- [Risk] The oversized-household vehicle-split exception could become common in dense terraced-housing OAs with large multi-generational households and only one car, undermining the "families aren't split" goal in practice → Mitigation: report the split rate as a summary metric rather than letting it pass silently.
-- [Risk] Treating unmet demand as a terminal, un-resolved output could make results hard to interpret if a large share of an OA ends up unseated → Mitigation: report unmet-demand rate per muster point and per priority tier as a first-class output.
+- [Risk] The 20 m parking snap may fail for homes set back from the road (rural properties, large estates, flats behind service roads), removing their vehicle from the fleet entirely → Mitigation: report the unresolved-parking rate as a summary metric; if it is material, the snap distance is a single config value to revisit.
+- [Risk] With one vehicle per muster point, seat supply is fragmented — a carless household surrounded by full cars is unseated even if spare seats exist just outside its 10-minute ceiling → Mitigation: this is a real property of the scenario being modeled, not an artifact; report unmet demand per Output Area so its spatial pattern is visible.
+- [Risk] The oversized-group split could become common in dense terraced-housing OAs with large multi-generational households and only one car, undermining the "families aren't split" goal in practice → Mitigation: report the split rate as a summary metric rather than letting it pass silently.
+- [Risk] Treating unmet demand as a terminal, un-resolved output could make results hard to interpret if a large share of an OA ends up unseated → Mitigation: report unmet-demand rate per Output Area and per tier as a first-class output.
 - [Trade-off] The portable `AdminArea` schema adds a layer of indirection over using ONS OA/LSOA codes directly → accepted, since international reuse is an explicit goal of this change.
-- [Risk] Home-collection routing turns part of vehicle assignment into a small vehicle-routing problem (multiple stops, minimize-and-spread objective) rather than pure bin-packing → Mitigation: keep it a greedy assignment (nearest available vehicle with spare capacity, capped stops-per-vehicle) for this iteration rather than a full VRP solve; revisit only if the greedy approach visibly concentrates stops in practice (see the split-rate-style summary metric in tasks.md).
 
 ## Open Questions
 
-- Should the muster-point catalog be auto-derived purely from Overture Places / OSM POI tags (school, community_centre, car park), or does it need manual curation against real evacuation-planning knowledge of Thanet? Tasks.md includes an auto-derivation step plus a manual-review checkpoint so this can be resolved without changing the spec or approach.
+- None blocking. The muster-point catalog curation question from the first draft is resolved by defining muster points as parked cars, which removes the catalog entirely.
