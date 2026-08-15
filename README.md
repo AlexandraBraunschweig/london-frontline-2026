@@ -62,6 +62,8 @@ admin_areas -> admin_areas_geojson
             -> dwelling_points
                  (with synthetic_population) -> household_locations -> vehicles
             -> road_centrelines                                     -> muster_points
+                                                                    -> district_exits
+   ... seat assignment -> vehicle_routes -> vehicle_departures -> matsim_scenario
 ```
 
 ## Inspecting the warehouse
@@ -139,6 +141,75 @@ COPY (SELECT vehicle_id, snap_distance_m, geometry FROM muster_points USING SAMP
 TO 'data/exports/muster_sample.geojson' WITH (FORMAT GDAL, DRIVER 'GeoJSON');
 ```
 
+## The traffic microsimulation scenario
+
+`matsim_scenario` writes a MATSim scenario to `data/exports/matsim/`:
+
+| File | Contents |
+| --- | --- |
+| `population.xml.gz` | one plan per seated person — 131,420 of them |
+| `vehicles.xml.gz` | the departing fleet, one entry per car on the road |
+| `households.xml.gz` | households and the cars among them that depart |
+| `config.xml` | minimal runnable config, declaring EPSG:27700 |
+
+Drivers get a `car` leg; passengers get a `ride` leg, which MATSim teleports. So
+the number of vehicles entering the network is exactly the number of cars that
+depart — the quantity the whole ride-share comparison rests on. Note that a
+driver making collection stops has one `car` leg *per hop*, so legs exceed
+vehicles by the number of collection stops.
+
+### Building the network
+
+The pipeline does **not** build `network.xml.gz`. Plans carry British National
+Grid coordinates, and MATSim assigns activities to links itself, so the scenario
+loads against a network built separately from the same OpenStreetMap data:
+
+```bash
+# Using pt2matsim, or matsim-libs' own OSM reader
+java -cp pt2matsim.jar org.matsim.pt2matsim.run.Osm2MultimodalNetwork \
+     osm-input.osm network.xml.gz EPSG:27700
+```
+
+Build it from an extract covering the same area as `road_centrelines`, in
+EPSG:27700 so it agrees with the plans.
+
+### Resolving locations to network links
+
+Every location that must bind to a link is published by OpenStreetMap way rather
+than by link id, in `scenario_network_refs`:
+
+```sql
+SELECT reference_type, reference_id, way_id, way_position_m, easting, northing
+FROM scenario_network_refs;
+```
+
+Link ids are assigned when the network is built and differ between readers and
+between builds, so a scenario keyed on them would break every time the network
+was rebuilt. Way ids are stable across both. MATSim's OSM readers keep the source
+way id on each link, and because MATSim splits ways at junctions, one way maps to
+several links — `way_position_m` says which one, being the distance from the
+start of the way. Coordinates are published alongside so a location can fall back
+to nearest-link matching if a way is missing from the network build; the count of
+references that fail to resolve is recorded in `scenario_shortfalls` rather than
+raised.
+
+### Running it
+
+```bash
+java -Xmx8g -cp matsim.jar org.matsim.run.Controler data/exports/matsim/config.xml
+```
+
+The emitted config is deliberately minimal. Scoring parameters, replanning
+strategies and iteration counts are the simulation operator's business, not the
+pipeline's.
+
+### Reading the result
+
+`tripinfo` output gives per-vehicle travel time and delay, which is the
+comparison metric between the one-car-per-household baseline and the pooled
+scenario. Run both against the same network with the same seed and departure
+profile, or the comparison measures the configuration rather than the pooling.
+
 ## Known limitations
 
 These are real and recorded, not oversights:
@@ -154,3 +225,32 @@ These are real and recorded, not oversights:
 - **Snap distances are inflated by OSM gaps.** Many residential access roads,
   service roads and driveways are unmapped, so ~19,000 cars park more than 20 m
   from their home. No vehicle is dropped for this; the distance is reported.
+
+### Limitations of the microsimulation scenario
+
+These bear directly on any clearance time quoted from a run, and should travel
+with the figure:
+
+- **Exits are infinite-capacity sinks.** The evacuation is scoped to clearing the
+  district, because the road network only covers the district — Canterbury is
+  about 9 km beyond where `road_centrelines` stops. Vehicles leaving at the
+  boundary never queue on the A299 beyond it, so **clearance time is optimistic,
+  most so in the tail**, where the real bottleneck would be downstream. Modelling
+  it needs a network extended past the boundary.
+- **Vehicles head for their nearest exit.** There is no destination-choice model,
+  so demand concentrates more than real drivers choosing by travel time would
+  allow: 90% of Thanet's fleet is assigned to the Ramsgate Road corridor. The
+  loading per exit is reported by `vehicle_departures` for exactly this reason.
+- **Co-located crossings are merged.** One corridor rarely crosses a boundary
+  once, so crossings within `exit_cluster_radius_m` are collapsed and represented
+  by their most major road. Without this, Thanet's four Ramsgate Road crossings
+  (all within 292 m) split the corridor and put 90% of the fleet onto a *tertiary*
+  way while a trunk way 250 m away took seven vehicles. `crossing_count` on each
+  exit says how many crossings it stands for, so over-merging is visible.
+- **The mobilisation curve is provisional.** Its shape is decided — a lognormal
+  delay after notification, since the tail governs clearance — but
+  `mobilisation_median_minutes` and `mobilisation_sigma` need grounding in
+  evacuation response literature. The current 15-minute median spreads departures
+  over about 143 minutes. Recalibrating changes no code.
+- **Collection-stop dwell is provisional too**, at 120 s.
+- **No background traffic.** The scenario contains evacuating vehicles only.

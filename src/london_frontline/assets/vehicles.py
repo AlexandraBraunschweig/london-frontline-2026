@@ -142,6 +142,12 @@ def muster_points(
     Nearest is found by expanding the search radius in steps rather than by one
     unbounded join, so the spatial index stays useful; each vehicle is resolved at
     the smallest radius that reaches a road, which is the true nearest.
+
+    The way the snap matched, and how far along it the car sits, are recorded
+    alongside the coordinate. Both fall out of the snap for free, and they are
+    what lets a downstream microsimulation bind this car to a network link by
+    lookup instead of re-deriving the nearest link and possibly disagreeing about
+    which road the car is on.
     """
     with warehouse.connect() as conn:
         # Two-point segments give tight bounding boxes, so the index prunes; a
@@ -176,7 +182,8 @@ def muster_points(
             CREATE OR REPLACE TABLE muster_points (
                 muster_point_id BIGINT, vehicle_id BIGINT, household_id BIGINT,
                 area_id VARCHAR, capacity INTEGER, snap_distance_m DOUBLE,
-                easting DOUBLE, northing DOUBLE, geometry GEOMETRY
+                easting DOUBLE, northing DOUBLE, geometry GEOMETRY,
+                way_id BIGINT, way_position_m DOUBLE
             )
             """
         )
@@ -196,21 +203,36 @@ def muster_points(
                 ),
                 nearest AS (
                     SELECT p.vehicle_id, p.household_id, p.area_id, p.capacity,
+                           s.way_id,
                            ST_Distance(p.home, s.geometry) AS snap_distance_m,
                            ST_ClosestPoint(s.geometry, p.home) AS parking_point,
                            row_number() OVER (
                                PARTITION BY p.vehicle_id
-                               ORDER BY ST_Distance(p.home, s.geometry)
+                               -- way_id breaks ties so a rerun parks every
+                               -- vehicle on the same way. Ties are almost always
+                               -- two segments meeting at a shared vertex, where
+                               -- the closest point is that vertex either way, so
+                               -- this fixes the recorded way without moving the
+                               -- car.
+                               ORDER BY ST_Distance(p.home, s.geometry), s.way_id
                            ) AS rank
                     FROM pending p
                     JOIN road_segments s ON ST_DWithin(p.home, s.geometry, {radius})
                 )
-                SELECT vehicle_id, vehicle_id, household_id, area_id, capacity,
-                       snap_distance_m,
-                       ST_X(parking_point), ST_Y(parking_point),
-                       ST_Transform(parking_point, '{BNG_SRS}', '{WGS84_SRS}',
-                                    always_xy := true)
-                FROM nearest WHERE rank = 1
+                -- Position is measured along the whole way, not the two-point
+                -- segment the snap matched, so it indexes into the same geometry
+                -- a simulator builds its network links from.
+                SELECT n.vehicle_id, n.vehicle_id, n.household_id, n.area_id,
+                       n.capacity, n.snap_distance_m,
+                       ST_X(n.parking_point), ST_Y(n.parking_point),
+                       ST_Transform(n.parking_point, '{BNG_SRS}', '{WGS84_SRS}',
+                                    always_xy := true),
+                       n.way_id,
+                       ST_LineLocatePoint(r.geometry, n.parking_point)
+                         * ST_Length(r.geometry) AS way_position_m
+                FROM nearest n
+                JOIN road_centrelines r USING (way_id)
+                WHERE n.rank = 1
                 """
             )
             resolved = conn.execute("SELECT count(*) FROM muster_points").fetchone()[0]
@@ -247,6 +269,7 @@ def muster_points(
                    count(*) FILTER (
                        WHERE snap_distance_m > {planning.parking_snap_review_distance_m}
                    ) AS beyond_review_threshold,
+                   count(*) FILTER (WHERE way_id IS NULL) AS without_way_reference,
                    (SELECT count(*) FROM unresolved_parking) AS unresolved
             FROM muster_points
             """
@@ -271,6 +294,7 @@ def muster_points(
             "max_snap_distance_m": float(stats["max_m"]),
             "beyond_review_threshold": int(stats["beyond_review_threshold"]),
             "review_threshold_m": planning.parking_snap_review_distance_m,
+            "without_way_reference": int(stats["without_way_reference"]),
             "unresolved_parking": int(stats["unresolved"]),
         }
     )

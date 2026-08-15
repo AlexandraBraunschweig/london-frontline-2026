@@ -119,6 +119,66 @@ class PlanningConfig(ConfigurableResource):
     destination_latitude: float = 51.2802
     destination_longitude: float = 1.0789
 
+    # --- Microsimulation scenario export ------------------------------------
+    # Highway classes counted as through routes when qualifying district exits.
+    # Service roads, tracks and footways are excluded: a driveway or car-park
+    # access crossing the boundary is not an evacuation route.
+    #
+    # ORDER IS SIGNIFICANT, most major first. The same list decides which
+    # crossing represents a cluster of co-located ones, so that a corridor is
+    # entered by its largest road. Keeping one ordered list rather than a
+    # separate ranking stops the two drifting apart.
+    exit_highway_classes: list[str] = [
+        "motorway",
+        "motorway_link",
+        "trunk",
+        "trunk_link",
+        "primary",
+        "primary_link",
+        "secondary",
+        "secondary_link",
+        "tertiary",
+        "tertiary_link",
+        "unclassified",
+        "residential",
+    ]
+    # A way must continue at least this far beyond the district boundary to be an
+    # exit. Much of a coastal district's boundary is coastline, so a seafront or
+    # harbour road clips it without ever leaving the district. In Thanet this
+    # rejects the two Royal Harbour Approach ways (29 m and 8 m beyond the
+    # boundary) while admitting the shortest real exit, Plucks Gutter, at 66 m.
+    minimum_exit_length_outside_m: float = 50.0
+    # Crossings within this distance of each other describe the same way out of
+    # the district and are collapsed into one exit. A dual carriageway crosses
+    # once per carriageway, a way can leave and re-enter, and one road is often
+    # mapped as several ways of different classes — without this, which crossing
+    # a vehicle heads for turns on a few metres. In Thanet, four Ramsgate Road
+    # crossings sit within 292 m and would otherwise split a corridor carrying
+    # 90% of the fleet across a tertiary way and two trunk ways.
+    exit_cluster_radius_m: float = 500.0
+
+    # Time the evacuation order is issued. Distinct from fleet_departure_time,
+    # which is when the leader-facing plan says a vehicle sets off: departures
+    # here are *drawn* relative to notification rather than fixed.
+    evacuation_notification_time: str = "2026-01-01T08:00:00"
+    # Delay between notification and a vehicle being ready to move, drawn per
+    # vehicle from a lognormal. Right-skewed on purpose: most people leave
+    # promptly and a long tail leaves much later, and it is the tail that governs
+    # clearance time. A uniform ramp has no tail and would understate it.
+    # PROVISIONAL: the shape is decided, but these two values need grounding in
+    # evacuation response literature. See design.md, Open Questions.
+    mobilisation_median_minutes: float = 15.0
+    # Spread, as the sigma of the underlying normal. Setting this to 0 collapses
+    # the draw onto the median, so every vehicle mobilises together; combined
+    # with mobilisation_median_minutes = 0 and include_driver_access_time =
+    # false, that reproduces a single fleet-wide departure at notification.
+    mobilisation_sigma: float = 0.6
+    # Whether a driver's journey from home to the vehicle delays its departure.
+    include_driver_access_time: bool = True
+    # How long a vehicle waits at each home-collection stop.
+    # PROVISIONAL: needs a defensible value. See design.md, Open Questions.
+    collection_stop_dwell_seconds: float = 120.0
+
     # --- Storage ------------------------------------------------------------
     # Directory for downloaded source extracts and exported outputs.
     data_dir: str = "data"
