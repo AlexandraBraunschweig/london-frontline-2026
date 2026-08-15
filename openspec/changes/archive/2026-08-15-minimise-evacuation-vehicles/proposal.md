@@ -12,8 +12,8 @@ This change replaces "everyone boards their own car" with "choose which cars dep
 
 - **Vehicle activation becomes a decision, not a given.** A vehicle departs only if the assignment chooses it. A car-owning household may be seated in a neighbour's car and leave its own parked — that is the pooled behaviour the project exists to test.
 - The tiered assignment in `evacuation-seat-assignment` is replaced by a **coverage-maximising allocation**: repeatedly activate the vehicle that seats the most currently-unseated people within their walking ceiling, then fill it, until everyone reachable is seated. Priority within a vehicle still protects dependents and non-walkers.
-- **Driver availability moves from a post-hoc check to a selection constraint.** A vehicle is only eligible to activate if a licensed driver can be among its occupants, so a car nobody can drive is never chosen and never strands anyone.
-- The owner household keeps no special claim on its own vehicle, but retains a **tie-break preference**: where activating either of two vehicles is equally good, the one whose owner is aboard wins, since it needs no key handover.
+- **Driver availability moves from a post-hoc check to a selection constraint.** A vehicle is only eligible to activate if a licensed member of its owner household will be aboard, so a car nobody may drive is never chosen and never strands anyone.
+- **A car is driven by its owner.** A vehicle is activated only when a licensed member of the owning household is aboard, so no car departs without its owner and no keys change hands. The owner household loses its claim to a *seat* — it may ride with a neighbour — but nobody else drives its car.
 - Unmet demand, family integrity, the walking ceiling, home-collection routing, and the collection-stop cap are all unchanged.
 - New reporting: cars-on-the-road against both the baseline and the theoretical packing floor, so the ride-share saving is stated directly rather than inferred.
 

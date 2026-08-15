@@ -17,29 +17,21 @@ The system SHALL classify each travel group as **home-collection** if any of its
 - **THEN** the group SHALL be classified walk-in and subject to the walking-time requirements below
 
 ### Requirement: Assignment tier order
-The system SHALL assign occupants to Vehicles in four tiers, in order:
+The system SHALL assign occupants to activated Vehicles in three tiers, in order:
 
-1. the owner household's own travel groups, into that household's own Vehicle;
-2. Class A walk-in groups (containing a dependent per the age-banded rule in `synthetic-population`);
-3. home-collection groups and individuals;
-4. Class B walk-in groups (independent adults with no dependents).
+1. walk-in groups containing a dependent per the age-banded rule in `synthetic-population`;
+2. home-collection groups and individuals;
+3. walk-in groups of independent adults only.
 
-A later tier SHALL NOT be allocated a seat while any group in an earlier tier that could occupy that seat remains unallocated.
+A later tier SHALL NOT be allocated a seat while any group in an earlier tier that could occupy that seat remains unallocated. The owner household no longer takes a tier of its own: which vehicles exist to be filled is decided by `fleet-minimisation`, and ownership survives only as its tie-break.
 
 #### Scenario: Tier ordering enforced
-- **WHEN** a Class A walk-in group has not yet been allocated a seat in a Vehicle within its walking ceiling
-- **THEN** no Class B walk-in group SHALL be allocated a seat in that Vehicle ahead of it
+- **WHEN** a walk-in group containing a dependent has not yet been allocated a seat in an activated Vehicle within its walking ceiling
+- **THEN** no group of independent adults SHALL be allocated a seat in that Vehicle ahead of it
 
-### Requirement: Owner household seated in its own vehicle
-The travel groups of a Vehicle's owner household SHALL be allocated seats in that Vehicle before any other occupant, up to that Vehicle's capacity.
-
-#### Scenario: Owner household smaller than its vehicle
-- **WHEN** a car-owning household's members occupy fewer seats than its Vehicle's capacity
-- **THEN** those members SHALL be allocated to that Vehicle and the remaining seats SHALL be offered to later tiers
-
-#### Scenario: Owner household with more members than seats
-- **WHEN** a car-owning household's members exceed its Vehicle's total seat capacity
-- **THEN** the unseated members SHALL be treated as walk-in or home-collection groups for allocation to another Vehicle, per their collection mode
+#### Scenario: Ownership confers no seating priority
+- **WHEN** a Vehicle is activated and its owner household's members compete for its seats with a dependent-bearing group from another household
+- **THEN** the dependent-bearing group SHALL be seated first
 
 ### Requirement: Walking-time ceiling for walk-in groups
 No walk-in travel group, of either class, SHALL be allocated to a Vehicle whose parking location exceeds a configured pedestrian-network walking time (default 10 minutes) from that group's home location. A walk-in group for which no Vehicle within that ceiling has remaining capacity SHALL be recorded as unmet evacuation demand rather than force-assigned beyond the ceiling.
@@ -75,15 +67,19 @@ Every member of an indivisible travel group SHALL be allocated to the same Vehic
 - **THEN** the system SHALL split the group across the fewest Vehicles that together seat all its members, and SHALL record the split
 
 ### Requirement: Driver availability
-The system SHALL NOT finalize a Vehicle's occupant list unless at least one occupant has license_type = `car`.
+The system SHALL NOT finalize an activated Vehicle's occupant list unless at least one occupant has license_type = `car`. This is guaranteed by the activation constraint in `fleet-minimisation` rather than enforced by dropping vehicles after the fact, so occupants are never committed to a vehicle that turns out to be undrivable.
+
+#### Scenario: Driver present in every departing vehicle
+- **WHEN** a Vehicle's occupant list is finalized
+- **THEN** it SHALL contain at least one occupant with license_type = `car`
 
 #### Scenario: Owner household with no licensed driver
-- **WHEN** a Vehicle's owner household contains no member with license_type = `car`
-- **THEN** that Vehicle MAY still depart if an occupant allocated from a later tier has license_type = `car`
+- **WHEN** a Vehicle's owner household contains no member with license_type = `car` able to board it
+- **THEN** that Vehicle SHALL NOT be activated, because only its owner may drive it
 
 #### Scenario: No driver available for an otherwise-fillable vehicle
-- **WHEN** a Vehicle's finalized occupant list would contain no occupant with license_type = `car`
-- **THEN** the system SHALL NOT finalize that Vehicle and SHALL record its candidate occupants as unmet evacuation demand
+- **WHEN** no licensed member of a Vehicle's owner household can board it
+- **THEN** that Vehicle SHALL NOT be activated, and the people who could have ridden in it SHALL remain available for another Vehicle rather than being recorded as unmet demand
 
 ### Requirement: Single departure wave, unmet demand tracking
 The system SHALL model exactly one departure per Vehicle, with no return trips or relay waves. Any person who cannot be allocated a seat in any Vehicle available to them SHALL be recorded as unmet evacuation demand, identified by their home Output Area, collection mode, and assignment tier.

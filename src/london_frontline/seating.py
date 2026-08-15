@@ -298,12 +298,18 @@ def assign_seats(
 def expand_to_persons(
     seatings: Sequence[Seating],
     members_by_group: dict[int, Sequence[int]],
+    licensed_person_ids: set[int] | None = None,
 ) -> list[PersonSeat]:
     """Hand each group's seats to specific members.
 
     Members are taken in person order and seatings in muster-point order, so a
     split group's members land deterministically and the same run reproduces the
     same allocation.
+
+    When a group is split across vehicles and ``licensed_person_ids`` is given,
+    one licensed member is placed in each part before the rest are distributed.
+    Without that, a family's only driver could land in one car and leave the
+    other undrivable — which is the same fault as counting drivers per group.
     """
     by_group: dict[int, list[Seating]] = defaultdict(list)
     for seat in seatings:
@@ -312,18 +318,36 @@ def expand_to_persons(
     person_seats: list[PersonSeat] = []
     for group_id, group_seatings in by_group.items():
         members = sorted(members_by_group.get(group_id, ()))
-        position = 0
-        for seat in sorted(group_seatings, key=lambda s: s.muster_point_id):
-            for _ in range(seat.seats):
-                if position >= len(members):
+        ordered = sorted(group_seatings, key=lambda s: s.muster_point_id)
+
+        allocation: dict[int, list[int]] = {
+            seat.muster_point_id: [] for seat in ordered
+        }
+        pending = list(members)
+
+        # Spread drivers across the parts first, one each, while there are parts
+        # left that have none.
+        if licensed_person_ids and len(ordered) > 1:
+            drivers = [m for m in pending if m in licensed_person_ids]
+            for seat, driver in zip(ordered, drivers):
+                allocation[seat.muster_point_id].append(driver)
+                pending.remove(driver)
+
+        for seat in ordered:
+            room = seat.seats - len(allocation[seat.muster_point_id])
+            for _ in range(room):
+                if not pending:
                     break
+                allocation[seat.muster_point_id].append(pending.pop(0))
+
+        for seat in ordered:
+            for person_id in allocation[seat.muster_point_id]:
                 person_seats.append(
                     PersonSeat(
-                        members[position], group_id, seat.muster_point_id,
+                        person_id, group_id, seat.muster_point_id,
                         seat.tier, seat.split,
                     )
                 )
-                position += 1
     return person_seats
 
 

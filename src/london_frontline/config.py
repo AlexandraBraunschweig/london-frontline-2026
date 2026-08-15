@@ -98,6 +98,14 @@ class PlanningConfig(ConfigurableResource):
     # Cap on distinct home-collection stops a single vehicle will make, so that
     # unavoidable stops spread across the fleet.
     max_collection_stops_per_vehicle: int = 3
+    # Where two vehicles would seat the same number of people, prefer the one
+    # whose owner household is aboard: it needs no key handover, and it is a less
+    # surprising instruction to give a real person.
+    prefer_owner_aboard: bool = True
+    # A vehicle is not activated to carry fewer than this many people. The
+    # default of 1 activates anything that seats somebody, on the grounds that a
+    # person left behind is worse than a near-empty car.
+    minimum_vehicle_occupancy: int = 1
 
     # --- Routes -------------------------------------------------------------
     # Single fleet-wide departure time; every muster-point stop uses it.

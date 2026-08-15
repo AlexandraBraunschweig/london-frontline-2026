@@ -31,6 +31,9 @@ def vehicle_routes(
 ) -> None:
     """Choose a leader per departing vehicle and lay out its ordered stops.
 
+    The leader is a licensed member of the owner household: a car is driven by
+    its owner, which activation already guarantees is possible.
+
     The muster point is always the first stop — it is where the vehicle is
     parked. Home-collection households follow, ordered outward from it. Meeting
     times accumulate along the route from a single fleet-wide departure, using
@@ -52,12 +55,13 @@ def vehicle_routes(
                        (p.household_id = m.household_id) AS from_owner_household,
                        row_number() OVER (
                            PARTITION BY s.muster_point_id
-                           ORDER BY (p.household_id = m.household_id) DESC, p.person_id
+                           ORDER BY p.person_id
                        ) AS rank
                 FROM person_seats s
                 JOIN persons p USING (person_id)
                 JOIN muster_points m ON m.muster_point_id = s.muster_point_id
                 WHERE p.license_type = '{LICENSE_CAR}'
+                  AND p.household_id = m.household_id
             ) WHERE rank = 1
             """
         )

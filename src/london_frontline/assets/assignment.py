@@ -3,7 +3,7 @@
 import pandas as pd
 from dagster import AssetExecutionContext, asset
 
-from london_frontline import seating
+from london_frontline import fleet, seating
 from london_frontline.assets.pedestrian import walk_candidates
 from london_frontline.assets.relationships import travel_groups
 from london_frontline.assets.vehicles import muster_points
@@ -148,12 +148,45 @@ def seat_assignments(
             "SELECT household_id, muster_point_id, distance_m "
             "FROM collection_candidates ORDER BY household_id, distance_m"
         ).fetchdf()
+        # Reachability drives activation: which households could board which
+        # vehicle, kept separate by mode because a non-walker cannot walk to a
+        # car merely because it is close.
+        conn.execute(
+            """
+            CREATE OR REPLACE TABLE vehicle_reach AS
+            SELECT household_id, muster_point_id, 'walk' AS mode
+            FROM walk_candidates
+            UNION ALL
+            SELECT household_id, muster_point_id, 'collection' FROM collection_candidates
+            """
+        )
+        conn.execute(
+            """
+            CREATE OR REPLACE TABLE group_reach AS
+            SELECT g.travel_group_id, g.household_id, g.all_can_walk,
+                   count(r.muster_point_id) AS vehicles_reachable
+            FROM travel_groups g
+            LEFT JOIN vehicle_reach r
+              ON r.household_id = g.household_id
+             AND r.mode = CASE WHEN g.all_can_walk THEN 'walk' ELSE 'collection' END
+            GROUP BY 1, 2, 3
+            """
+        )
         members_frame = conn.execute(
             "SELECT travel_group_id, person_id FROM travel_group_members "
             "ORDER BY travel_group_id, person_id"
         ).fetchdf()
         licensed_frame = conn.execute(
             "SELECT person_id FROM persons WHERE license_type = ?", [LICENSE_CAR]
+        ).fetchdf()
+        drivers_frame = conn.execute(
+            """
+            SELECT m.travel_group_id,
+                   count(*) FILTER (WHERE p.license_type = ?) AS drivers
+            FROM travel_group_members m JOIN persons p USING (person_id)
+            GROUP BY m.travel_group_id
+            """,
+            [LICENSE_CAR],
         ).fetchdf()
 
     groups = [
@@ -184,15 +217,32 @@ def seat_assignments(
             grouped.setdefault(household_id, []).append((muster_point_id, distance))
         return grouped
 
-    seatings, unseated = seating.assign_seats(
+    reach = fleet.build_reach(
+        zip(
+            walk_frame["household_id"].astype(int),
+            walk_frame["muster_point_id"].astype(int),
+        ),
+        zip(
+            collection_frame["household_id"].astype(int),
+            collection_frame["muster_point_id"].astype(int),
+        ),
+    )
+    driver_count = {
+        int(row.travel_group_id): int(row.drivers)
+        for row in drivers_frame.itertuples()
+    }
+    seatings, unseated, activated = fleet.activate_fleet(
         groups,
         vehicles,
-        as_candidates(walk_frame, "walk_distance_m"),
-        as_candidates(collection_frame, "distance_m"),
+        reach,
+        driver_count,
         planning.max_collection_stops_per_vehicle,
+        minimum_occupancy=planning.minimum_vehicle_occupancy,
     )
     context.log.info(
-        "Tiered assignment: %s seatings, %s groups unseated before the driver check",
+        "Activated %s of %s vehicles; %s seatings, %s groups unseated",
+        f"{len(activated):,}",
+        f"{len(vehicles):,}",
         f"{len(seatings):,}",
         f"{len(unseated):,}",
     )
@@ -207,15 +257,17 @@ def seat_assignments(
     ):
         members_by_group.setdefault(group_id, []).append(person_id)
 
-    expanded = seating.expand_to_persons(seatings, members_by_group)
     licensed = set(licensed_frame["person_id"].astype(int))
+    expanded = seating.expand_to_persons(seatings, members_by_group, licensed)
+    # Activation already guarantees a driver aboard, so this should now be a
+    # no-op. It stays as a guard rather than a mechanism.
     kept, dropped = seating.enforce_driver_availability(expanded, groups, licensed)
-    context.log.info(
-        "Driver check: %s people kept, %s dropped for riding in a vehicle with "
-        "no licensed driver",
-        f"{len(kept):,}",
-        f"{sum(u.size for u in dropped):,}",
-    )
+    if dropped:
+        raise ValueError(
+            f"{sum(u.size for u in dropped)} people were seated in vehicles with "
+            f"no licensed driver; activation should have made this impossible"
+        )
+    context.log.info("Driver guard: %s people seated, none dropped", f"{len(kept):,}")
 
     person_seat_frame = pd.DataFrame(
         [(s.person_id, s.group_id, s.muster_point_id, s.tier, s.split) for s in kept],
@@ -244,6 +296,23 @@ def seat_assignments(
         conn.execute("CREATE OR REPLACE TABLE unmet_demand AS SELECT * FROM unmet_df")
         conn.execute(
             "CREATE OR REPLACE TABLE person_seats AS SELECT * FROM person_seats_df"
+        )
+        conn.register("activated_df", pd.DataFrame({"muster_point_id": activated}))
+        conn.execute(
+            """
+            CREATE OR REPLACE TABLE activated_vehicles AS
+            SELECT muster_point_id, vehicle_id, owner_household_id, capacity,
+                   occupants, capacity - occupants AS empty_seats
+            FROM (
+                SELECT a.muster_point_id, m.vehicle_id,
+                       m.household_id AS owner_household_id, m.capacity,
+                       count(s.person_id) AS occupants
+                FROM activated_df a
+                JOIN muster_points m USING (muster_point_id)
+                LEFT JOIN person_seats s USING (muster_point_id)
+                GROUP BY a.muster_point_id, m.vehicle_id, m.household_id, m.capacity
+            )
+            """
         )
         driverless = conn.execute(
             """

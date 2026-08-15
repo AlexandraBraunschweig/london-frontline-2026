@@ -26,23 +26,26 @@ The system SHALL activate vehicles by repeatedly choosing the Vehicle that would
 - **WHEN** no unseated person can reach any inactive Vehicle
 - **THEN** activation SHALL stop and the remaining unseated people SHALL be recorded as unmet demand
 
-### Requirement: Driver eligibility constrains activation
-A Vehicle SHALL NOT be activated unless at least one person it would carry has license_type = `car`. Driver availability SHALL be evaluated when choosing to activate, not after occupants are fixed, so that a person is never stranded in a vehicle that turns out to be undrivable.
+### Requirement: A vehicle is driven by its owner
+A Vehicle SHALL NOT be activated unless a member of its owner household is among the people it will carry and has license_type = `car`. A car is its owner's property and their keys; it does not depart without them, and no other household drives it. Driver availability SHALL be evaluated when choosing to activate, not after occupants are fixed, so that a person is never stranded in a vehicle that turns out to be undrivable.
 
-#### Scenario: Undrivable vehicle is never activated
-- **WHEN** every person who could reach an inactive Vehicle has license_type ≠ `car`
-- **THEN** that Vehicle SHALL NOT be activated, and those people SHALL remain available to be seated in another Vehicle
+This bounds how far pooling can go — a car only leaves if the household that owns it is travelling in it — and it removes any need for key handover between households.
+
+#### Scenario: Owner household cannot drive
+- **WHEN** no member of a Vehicle's owner household who could board it has license_type = `car`
+- **THEN** that Vehicle SHALL NOT be activated, even if a licensed member of another household could reach it
+
+#### Scenario: A neighbour never drives another household's car
+- **WHEN** a licensed person from a household other than the owner's is the only licensed person able to reach a Vehicle
+- **THEN** that Vehicle SHALL NOT be activated on their account
+
+#### Scenario: The owner-driver is seated first
+- **WHEN** a Vehicle is activated
+- **THEN** a licensed member of its owner household SHALL be among its occupants
 
 #### Scenario: Nobody is stranded by a missing driver
 - **WHEN** activation completes
 - **THEN** no person SHALL be recorded as unmet demand for the reason that their vehicle had no licensed driver
-
-### Requirement: Owner-aboard tie-break
-WHEN two candidate Vehicles would seat the same number of unseated people, the system SHALL prefer the Vehicle whose owner household is among those being seated, since that vehicle needs no key handover.
-
-#### Scenario: Equal coverage, one owner aboard
-- **WHEN** two inactive Vehicles would each seat the same number of unseated people and exactly one of them would carry a member of its owner household
-- **THEN** the system SHALL activate that one
 
 ### Requirement: Fleet reporting against baseline and floor
 The system SHALL report the number of Vehicles activated alongside the one-car-per-car-owning-household baseline and the theoretical packing floor (people seated divided by vehicle capacity, rounded up), so the saving is stated rather than inferred.

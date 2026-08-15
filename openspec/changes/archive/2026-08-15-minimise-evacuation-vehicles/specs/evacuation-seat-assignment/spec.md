@@ -29,12 +29,12 @@ The system SHALL NOT finalize an activated Vehicle's occupant list unless at lea
 - **THEN** it SHALL contain at least one occupant with license_type = `car`
 
 #### Scenario: Owner household with no licensed driver
-- **WHEN** a Vehicle's owner household contains no member with license_type = `car`
-- **THEN** that Vehicle MAY still be activated if a licensed driver is among the people it would carry, and SHALL NOT be activated otherwise
+- **WHEN** a Vehicle's owner household contains no member with license_type = `car` able to board it
+- **THEN** that Vehicle SHALL NOT be activated, because only its owner may drive it
 
 #### Scenario: No driver available for an otherwise-fillable vehicle
-- **WHEN** every person who could reach a Vehicle has license_type ≠ `car`
-- **THEN** that Vehicle SHALL NOT be activated, and those people SHALL remain available for another Vehicle rather than being recorded as unmet demand
+- **WHEN** no licensed member of a Vehicle's owner household can board it
+- **THEN** that Vehicle SHALL NOT be activated, and the people who could have ridden in it SHALL remain available for another Vehicle rather than being recorded as unmet demand
 
 ## REMOVED Requirements
 
