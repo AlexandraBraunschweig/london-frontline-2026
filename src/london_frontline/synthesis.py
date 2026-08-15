@@ -37,7 +37,6 @@ _LAST_NAMES = (
 ).split()
 
 
-<<<<<<< Updated upstream
 def apportion(weights: Sequence[float], total: int) -> np.ndarray:
     """Split ``total`` across ``weights`` by largest remainder.
 
@@ -143,8 +142,6 @@ def assign_car_licences(
     return licensed, max(0, required_total - target_licences)
 
 
-=======
->>>>>>> Stashed changes
 def allocate_counts(
     rng: np.random.Generator,
     labels: Sequence[str],
@@ -166,20 +163,8 @@ def allocate_counts(
         # A marginal that is entirely zero carries no information; fall back to a
         # uniform split rather than failing the whole Output Area.
         weight_array = np.ones_like(weight_array)
-<<<<<<< Updated upstream
 
     counts = apportion(weight_array, total)
-=======
-    shares = weight_array / weight_array.sum() * total
-
-    counts = np.floor(shares).astype(int)
-    shortfall = total - counts.sum()
-    if shortfall > 0:
-        # Hand the remaining units to the largest fractional parts.
-        remainders = shares - counts
-        for index in np.argsort(-remainders)[:shortfall]:
-            counts[index] += 1
->>>>>>> Stashed changes
 
     allocation = np.repeat(np.asarray(labels, dtype=object), counts)
     rng.shuffle(allocation)

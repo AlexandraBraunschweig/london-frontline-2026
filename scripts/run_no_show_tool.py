@@ -16,10 +16,12 @@ there is something to click without going through a phone.
 from __future__ import annotations
 
 import argparse
+import os
+import socket
 import sys
 from datetime import datetime, timedelta
 
-from london_frontline import messaging
+from london_frontline import messaging, no_show
 from london_frontline.config import PlanningConfig
 from london_frontline.no_show import Clock
 from london_frontline.no_show_web import NoShowTool, serve
@@ -63,6 +65,26 @@ def example_links(tool: NoShowTool) -> list[tuple[str, str, str]]:
 _PAST_THE_WAIT_MINUTES = 15
 
 
+def lan_address() -> str | None:
+    """The address this machine answers to on its own network.
+
+    A link that says 127.0.0.1 works on the laptop and nowhere else: on a phone
+    it points the phone at itself. Tapping a link from a real message therefore
+    needs the address the phone can reach, which is this one.
+    """
+    probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        # Nothing is sent. Connecting a UDP socket only selects a route, and the
+        # local end of that route is the address in question. TEST-NET-1 is
+        # reserved and unrouted, so no packet could go anywhere even if one did.
+        probe.connect(("192.0.2.1", 9))
+        return probe.getsockname()[0]
+    except OSError:
+        return None
+    finally:
+        probe.close()
+
+
 def default_now(planning: PlanningConfig) -> datetime:
     """A moment at which the links are live rather than counting down."""
     departure = datetime.fromisoformat(planning.fleet_departure_time)
@@ -76,6 +98,12 @@ def main() -> int:
     parser.add_argument("--database", default=DEFAULT_DATABASE)
     parser.add_argument("--incidents", default=DEFAULT_INCIDENTS)
     parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument(
+        "--phone",
+        action="store_true",
+        help="serve on this machine's network address so a phone on the same "
+        "Wi-Fi can open the links. Sets --host and --base-url for you.",
+    )
     parser.add_argument("--port", type=int, default=8420)
     parser.add_argument(
         "--base-url", help="what the links say; defaults to host and port"
@@ -109,7 +137,14 @@ def main() -> int:
     planning = PlanningConfig(**overrides)
 
     moment = datetime.fromisoformat(args.now) if args.now else default_now(planning)
-    base_url = args.base_url or f"http://{args.host}:{args.port}"
+    host, base_url = args.host, args.base_url
+    if args.phone:
+        address = lan_address()
+        if address is None:
+            parser.error("no network address found — is this machine on Wi-Fi?")
+        host = "0.0.0.0"
+        base_url = base_url or f"http://{address}:{args.port}"
+    base_url = base_url or f"http://{host}:{args.port}"
 
     tool = NoShowTool(
         warehouse_database=args.database,
@@ -126,8 +161,23 @@ def main() -> int:
         print(f"wait:      {planning.no_show_wait_minutes:.0f} minutes\n")
         for kind, who, url in example_links(tool):
             print(f"{kind:<28} {who}\n  {url}\n")
+        if args.phone:
+            print(
+                "open the links above on a phone on the same Wi-Fi. This serves "
+                "to the whole network in clear text, which is fine for an "
+                "exercise on a home network and not for anything else.\n"
+            )
+        # The two processes have to agree on the address and the key, and
+        # getting either wrong produces a link that fails at the one moment it
+        # matters, so the companion command is printed rather than described.
+        print(
+            "to put these links into the messages themselves:\n"
+            f"  THANET_LINK_SECRET={os.environ.get(no_show.LINK_SECRET_ENVIRONMENT, '<same-key>')} \\\n"
+            f"    python scripts/send_example_messages.py --dry-run "
+            f"--base-url {base_url}\n"
+        )
         print(f"serving on {base_url} — control-C to stop\n")
-        serve(tool, args.host, args.port)
+        serve(tool, host, args.port)
     except KeyboardInterrupt:
         print("\nstopped")
     finally:

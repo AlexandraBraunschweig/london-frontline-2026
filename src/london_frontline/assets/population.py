@@ -22,8 +22,6 @@ LICENSE_CAR = "car"
 LICENSE_BUS = "bus"
 
 
-<<<<<<< Updated upstream
-=======
 def _licence_types(
     rng: np.random.Generator, ages: np.ndarray, planning: PlanningConfig
 ) -> np.ndarray:
@@ -40,7 +38,6 @@ def _licence_types(
     return licences
 
 
->>>>>>> Stashed changes
 @asset(deps=[census_marginals_resolved], group_name="population")
 def synthetic_population(
     context: AssetExecutionContext,
@@ -82,11 +79,8 @@ def synthetic_population(
 
     household_frames: list[pd.DataFrame] = []
     person_frames: list[pd.DataFrame] = []
-<<<<<<< Updated upstream
     shortfalls: list[dict] = []
     licence_conflicts: list[dict] = []
-=======
->>>>>>> Stashed changes
     next_household_id = 0
     next_person_id = 0
 
@@ -118,8 +112,6 @@ def synthetic_population(
             composition_marginal["value"].to_numpy(),
             household_total,
         )
-<<<<<<< Updated upstream
-=======
         cars = synthesis.allocate_counts(
             rng,
             [
@@ -133,14 +125,11 @@ def synthetic_population(
             household_total,
         ).astype(int)
 
->>>>>>> Stashed changes
         household_ids = np.arange(
             next_household_id, next_household_id + household_total
         )
         next_household_id += household_total
 
-<<<<<<< Updated upstream
-=======
         household_frames.append(
             pd.DataFrame(
                 {
@@ -153,7 +142,6 @@ def synthetic_population(
             )
         )
 
->>>>>>> Stashed changes
         # Persons are generated to fill the household sizes just allocated, so
         # the person count follows the household-size marginal rather than the
         # age marginal's total; the two differ slightly because each is rounded
@@ -191,7 +179,6 @@ def synthetic_population(
             ]
         )
 
-<<<<<<< Updated upstream
         # Cars and licences are conditioned on the household's adults, so both
         # are decided here rather than alongside the other household attributes:
         # a household cannot own a car it has nobody old enough to drive.
@@ -247,8 +234,6 @@ def synthetic_population(
             )
         )
 
-=======
->>>>>>> Stashed changes
         person_ids = np.arange(next_person_id, next_person_id + person_total)
         next_person_id += person_total
 
@@ -260,11 +245,7 @@ def synthetic_population(
                     "area_id": area,
                     "age": ages,
                     "sex": sexes,
-<<<<<<< Updated upstream
                     "license_type": licences,
-=======
-                    "license_type": _licence_types(rng, ages, planning),
->>>>>>> Stashed changes
                     "mobility_status": mobility_status,
                     "name": synthesis.names(rng, person_total),
                     "phone_number": synthesis.phone_numbers(
@@ -282,7 +263,6 @@ def synthetic_population(
     with warehouse.connect() as conn:
         conn.register("households_df", households)
         conn.register("persons_df", persons)
-<<<<<<< Updated upstream
         conn.register(
             "car_shortfall_df",
             pd.DataFrame(
@@ -305,10 +285,6 @@ def synthetic_population(
             "CREATE OR REPLACE TABLE licence_target_conflicts AS "
             "SELECT * FROM licence_conflict_df"
         )
-=======
-        conn.execute("CREATE OR REPLACE TABLE households AS SELECT * FROM households_df")
-        conn.execute("CREATE OR REPLACE TABLE persons AS SELECT * FROM persons_df")
->>>>>>> Stashed changes
 
     without_phone = int(persons["phone_number"].isna().sum())
     context.log.info(
@@ -317,7 +293,6 @@ def synthetic_population(
         f"{len(persons):,}",
         households["area_id"].nunique(),
     )
-<<<<<<< Updated upstream
     over_capped = int((households["num_cars"] > households["num_adults"]).sum())
     if over_capped:
         raise ValueError(
@@ -325,8 +300,6 @@ def synthetic_population(
             f"assign_cars_capped_by_adults has been breached"
         )
 
-=======
->>>>>>> Stashed changes
     context.add_output_metadata(
         {
             "households": len(households),
@@ -338,14 +311,11 @@ def synthetic_population(
             ),
             "car_owning_households": int((households["num_cars"] > 0).sum()),
             "vehicles_implied": int(households["num_cars"].sum()),
-<<<<<<< Updated upstream
             "households_with_more_cars_than_adults": int(
                 (households["num_cars"] > households["num_adults"]).sum()
             ),
             "car_shortfall_rows": len(shortfalls),
             "licence_target_conflicts": len(licence_conflicts),
-=======
->>>>>>> Stashed changes
         }
     )
 
@@ -433,7 +403,6 @@ def population_validation(
             """
         ).fetchdf().iloc[0]
 
-<<<<<<< Updated upstream
     coupling = None
     with warehouse.connect() as conn:
         conn.execute(
@@ -471,8 +440,6 @@ def population_validation(
             f"{int(coupling['cars_above_adults'])} hold more cars than adults"
         )
 
-=======
->>>>>>> Stashed changes
     if int(row["households_mismatched"]):
         raise ValueError(
             f"{int(row['households_mismatched'])} Output Areas have a household "
@@ -512,13 +479,10 @@ def population_validation(
             "persons_published": published,
             "communal_establishment_shortfall": shortfall,
             "communal_establishment_shortfall_pct": round(shortfall_fraction * 100, 2),
-<<<<<<< Updated upstream
             "car_owning_households_without_a_driver": 0,
             "households_with_more_cars_than_adults": 0,
             "households_with_fewer_drivers_than_cars": int(
                 coupling["drivers_below_cars"]
             ),
-=======
->>>>>>> Stashed changes
         }
     )

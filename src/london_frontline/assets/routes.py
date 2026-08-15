@@ -31,18 +31,9 @@ def vehicle_routes(
 ) -> None:
     """Choose a leader per departing vehicle and lay out its ordered stops.
 
-<<<<<<< Updated upstream
     The leader is a licensed member of the owner household: a car is driven by
     its owner, which activation already guarantees is possible.
 
-    The muster point is always the first stop — it is where the vehicle is
-    parked. Home-collection households follow, ordered outward from it. Meeting
-    times accumulate along the route from a single fleet-wide departure, using
-    straight-line distance at a configured average speed; no congestion is
-    modelled, which is the downstream microsimulation's job.
-    """
-    speed_m_per_second = planning.average_driving_speed_kph * 1000.0 / 3600.0
-=======
     The muster point is always the first stop — it is where the vehicle is
     parked. Home-collection households follow, ordered outward from it. Meeting
     times accumulate along the route from a single fleet-wide departure: a
@@ -50,9 +41,6 @@ def vehicle_routes(
     a configured average speed. No congestion is modelled, which is the
     downstream microsimulation's job.
     """
-    speed_m_per_second = planning.average_driving_speed_kph * 1000.0 / 3600.0
-    dwell_seconds = planning.stop_dwell_minutes * 60.0
->>>>>>> Stashed changes
 
     with warehouse.connect() as conn:
         # --- Leader: a car-licensed occupant, preferring the owner household --
@@ -67,20 +55,13 @@ def vehicle_routes(
                        (p.household_id = m.household_id) AS from_owner_household,
                        row_number() OVER (
                            PARTITION BY s.muster_point_id
-<<<<<<< Updated upstream
                            ORDER BY p.person_id
-=======
-                           ORDER BY (p.household_id = m.household_id) DESC, p.person_id
->>>>>>> Stashed changes
                        ) AS rank
                 FROM person_seats s
                 JOIN persons p USING (person_id)
                 JOIN muster_points m ON m.muster_point_id = s.muster_point_id
                 WHERE p.license_type = '{LICENSE_CAR}'
-<<<<<<< Updated upstream
                   AND p.household_id = m.household_id
-=======
->>>>>>> Stashed changes
             ) WHERE rank = 1
             """
         )
@@ -148,14 +129,10 @@ def vehicle_routes(
                          sum(leg_m) OVER (
                              PARTITION BY muster_point_id ORDER BY stop_seq
                          ) / {speed_m_per_second}
-<<<<<<< Updated upstream
-                       ) AS meeting_time
-=======
                        )
                      -- Every earlier stop cost its dwell before this one begins.
                      + to_seconds({dwell_seconds} * (stop_seq - 1))
                        AS meeting_time
->>>>>>> Stashed changes
             FROM legs
             """
         )

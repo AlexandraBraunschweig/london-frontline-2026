@@ -20,15 +20,12 @@ def conn():
         yield connection
 
 
-<<<<<<< Updated upstream
 # How far the interpolated point may sit from the recorded one. Linear
 # referencing round-trips through a fraction of the way's length, so the error is
 # floating-point noise scaled by that length, not a modelling tolerance.
 _INTERPOLATION_TOLERANCE_M = 0.01
 
 
-=======
->>>>>>> Stashed changes
 def test_each_muster_point_is_exactly_one_vehicle(conn):
     """Task 6.6: the mapping between muster points and vehicles is one to one."""
     points, vehicles_referenced = conn.execute(
@@ -92,7 +89,6 @@ def test_snap_distance_is_reported_not_used_as_a_filter(conn):
     ).fetchone()
     assert beyond > 0, "expected some homes further than the review threshold"
     assert beyond == distinct_vehicles
-<<<<<<< Updated upstream
 
 
 def test_way_reference_is_populated_and_resolvable(conn):
@@ -146,5 +142,3 @@ def test_way_position_interpolates_back_to_the_parking_point(conn):
         f"worst interpolation error {worst:.4g} m over {checked:,} "
         f"muster points exceeds {_INTERPOLATION_TOLERANCE_M} m"
     )
-=======
->>>>>>> Stashed changes

@@ -98,7 +98,6 @@ class PlanningConfig(ConfigurableResource):
     # Cap on distinct home-collection stops a single vehicle will make, so that
     # unavoidable stops spread across the fleet.
     max_collection_stops_per_vehicle: int = 3
-<<<<<<< Updated upstream
     # Where two vehicles would seat the same number of people, prefer the one
     # whose owner household is aboard: it needs no key handover, and it is a less
     # surprising instruction to give a real person.
@@ -107,8 +106,6 @@ class PlanningConfig(ConfigurableResource):
     # default of 1 activates anything that seats somebody, on the grounds that a
     # person left behind is worse than a near-empty car.
     minimum_vehicle_occupancy: int = 1
-=======
->>>>>>> Stashed changes
 
     # --- Routes -------------------------------------------------------------
     # Single fleet-wide departure time; every muster-point stop uses it.
@@ -116,8 +113,6 @@ class PlanningConfig(ConfigurableResource):
     # Used to estimate arrival times at successive collection stops from
     # straight-line distance. No congestion is modelled.
     average_driving_speed_kph: float = 30.0
-<<<<<<< Updated upstream
-=======
     # Time allowed at each stop for people to reach the kerb and board, added to
     # the meeting time of every stop after it. Travel time alone cannot carry a
     # schedule here: Thanet's collection legs are 17 m at the median, so a whole
@@ -125,14 +120,12 @@ class PlanningConfig(ConfigurableResource):
     # minute resolution a message quotes. Boarding, not driving, is what a
     # multi-stop pickup actually spends its time on.
     stop_dwell_minutes: float = 5.0
->>>>>>> Stashed changes
     # Single fleet-wide evacuation destination. Default is Canterbury, the
     # nearest large centre outside Thanet.
     destination_name: str = "Canterbury"
     destination_latitude: float = 51.2802
     destination_longitude: float = 1.0789
 
-<<<<<<< Updated upstream
     # --- Microsimulation scenario export ------------------------------------
     # Highway classes counted as through routes when qualifying district exits.
     # Service roads, tracks and footways are excluded: a driveway or car-park
@@ -192,7 +185,6 @@ class PlanningConfig(ConfigurableResource):
     # How long a vehicle waits at each home-collection stop.
     # PROVISIONAL: needs a defensible value. See design.md, Open Questions.
     collection_stop_dwell_seconds: float = 120.0
-=======
     # --- Live re-planning ---------------------------------------------------
     # A live re-plan measures from where the person is standing, in a straight
     # line, because it has to answer at the kerb in under a second — the routed
@@ -217,7 +209,6 @@ class PlanningConfig(ConfigurableResource):
     rescue_bus_delay_minutes: float = 45.0
     # Two reports this far apart share a bus rather than opening a second one.
     rescue_bus_pickup_radius_m: float = 1500.0
->>>>>>> Stashed changes
 
     # --- Storage ------------------------------------------------------------
     # Directory for downloaded source extracts and exported outputs.

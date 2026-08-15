@@ -23,28 +23,20 @@ class SpatialDuckDBResource(ConfigurableResource):
     """
 
     database: str = "data/warehouse.duckdb"
-<<<<<<< Updated upstream
-=======
     # Readers should set this. DuckDB permits one writer or many readers, so a
     # read-only consumer that opens for writing locks the pipeline out of its
     # own database for as long as it is attached.
     read_only: bool = False
->>>>>>> Stashed changes
 
     @contextmanager
     def connect(self) -> Iterator[duckdb.DuckDBPyConnection]:
         path = resolve(self.database)
-<<<<<<< Updated upstream
-        path.parent.mkdir(parents=True, exist_ok=True)
-        conn = duckdb.connect(str(path))
-=======
         if self.read_only:
             if not path.exists():
                 raise FileNotFoundError(f"No warehouse at {path}")
         else:
             path.parent.mkdir(parents=True, exist_ok=True)
         conn = duckdb.connect(str(path), read_only=self.read_only)
->>>>>>> Stashed changes
         try:
             conn.execute("INSTALL spatial;")
             conn.execute("LOAD spatial;")

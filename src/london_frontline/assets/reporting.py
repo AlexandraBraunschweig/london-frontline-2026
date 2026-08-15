@@ -27,15 +27,12 @@ _EXPORT_TABLES = (
     "vehicle_routes",
     "route_stops",
     "stop_notifications",
-<<<<<<< Updated upstream
     "district_boundary_crossings",
     "district_exits",
     "vehicle_departures",
     "scenario_collection_schedule",
     "scenario_network_refs",
     "scenario_shortfalls",
-=======
->>>>>>> Stashed changes
 )
 
 

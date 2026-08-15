@@ -3,11 +3,7 @@
 import pandas as pd
 from dagster import AssetExecutionContext, asset
 
-<<<<<<< Updated upstream
 from london_frontline import fleet, seating
-=======
-from london_frontline import seating
->>>>>>> Stashed changes
 from london_frontline.assets.pedestrian import walk_candidates
 from london_frontline.assets.relationships import travel_groups
 from london_frontline.assets.vehicles import muster_points
@@ -152,7 +148,6 @@ def seat_assignments(
             "SELECT household_id, muster_point_id, distance_m "
             "FROM collection_candidates ORDER BY household_id, distance_m"
         ).fetchdf()
-<<<<<<< Updated upstream
         # Reachability drives activation: which households could board which
         # vehicle, kept separate by mode because a non-walker cannot walk to a
         # car merely because it is close.
@@ -177,8 +172,6 @@ def seat_assignments(
             GROUP BY 1, 2, 3
             """
         )
-=======
->>>>>>> Stashed changes
         members_frame = conn.execute(
             "SELECT travel_group_id, person_id FROM travel_group_members "
             "ORDER BY travel_group_id, person_id"
@@ -186,7 +179,6 @@ def seat_assignments(
         licensed_frame = conn.execute(
             "SELECT person_id FROM persons WHERE license_type = ?", [LICENSE_CAR]
         ).fetchdf()
-<<<<<<< Updated upstream
         drivers_frame = conn.execute(
             """
             SELECT m.travel_group_id,
@@ -196,8 +188,6 @@ def seat_assignments(
             """,
             [LICENSE_CAR],
         ).fetchdf()
-=======
->>>>>>> Stashed changes
 
     groups = [
         seating.Group(
@@ -227,7 +217,6 @@ def seat_assignments(
             grouped.setdefault(household_id, []).append((muster_point_id, distance))
         return grouped
 
-<<<<<<< Updated upstream
     reach = fleet.build_reach(
         zip(
             walk_frame["household_id"].astype(int),
@@ -254,17 +243,6 @@ def seat_assignments(
         "Activated %s of %s vehicles; %s seatings, %s groups unseated",
         f"{len(activated):,}",
         f"{len(vehicles):,}",
-=======
-    seatings, unseated = seating.assign_seats(
-        groups,
-        vehicles,
-        as_candidates(walk_frame, "walk_distance_m"),
-        as_candidates(collection_frame, "distance_m"),
-        planning.max_collection_stops_per_vehicle,
-    )
-    context.log.info(
-        "Tiered assignment: %s seatings, %s groups unseated before the driver check",
->>>>>>> Stashed changes
         f"{len(seatings):,}",
         f"{len(unseated):,}",
     )
@@ -279,7 +257,6 @@ def seat_assignments(
     ):
         members_by_group.setdefault(group_id, []).append(person_id)
 
-<<<<<<< Updated upstream
     licensed = set(licensed_frame["person_id"].astype(int))
     expanded = seating.expand_to_persons(seatings, members_by_group, licensed)
     # Activation already guarantees a driver aboard, so this should now be a
@@ -291,17 +268,6 @@ def seat_assignments(
             f"no licensed driver; activation should have made this impossible"
         )
     context.log.info("Driver guard: %s people seated, none dropped", f"{len(kept):,}")
-=======
-    expanded = seating.expand_to_persons(seatings, members_by_group)
-    licensed = set(licensed_frame["person_id"].astype(int))
-    kept, dropped = seating.enforce_driver_availability(expanded, groups, licensed)
-    context.log.info(
-        "Driver check: %s people kept, %s dropped for riding in a vehicle with "
-        "no licensed driver",
-        f"{len(kept):,}",
-        f"{sum(u.size for u in dropped):,}",
-    )
->>>>>>> Stashed changes
 
     person_seat_frame = pd.DataFrame(
         [(s.person_id, s.group_id, s.muster_point_id, s.tier, s.split) for s in kept],
@@ -331,7 +297,6 @@ def seat_assignments(
         conn.execute(
             "CREATE OR REPLACE TABLE person_seats AS SELECT * FROM person_seats_df"
         )
-<<<<<<< Updated upstream
         conn.register("activated_df", pd.DataFrame({"muster_point_id": activated}))
         conn.execute(
             """
@@ -349,8 +314,6 @@ def seat_assignments(
             )
             """
         )
-=======
->>>>>>> Stashed changes
         driverless = conn.execute(
             """
             SELECT count(*) FROM (
