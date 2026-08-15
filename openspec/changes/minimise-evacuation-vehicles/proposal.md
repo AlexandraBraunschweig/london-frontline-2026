@@ -28,6 +28,7 @@ This change replaces "everyone boards their own car" with "choose which cars dep
 
 ## Impact
 
+- **Sequencing: `couple-cars-and-licences` should land first.** Much of the driver crisis motivating this change is an artifact of the synthesis, which draws licence holding independently of car ownership — 18.9% of one-car households currently have nobody able to drive. Fixing that removes most of the 10,849 stranded people on its own, and changes what this change is optimising against. The occupancy case stands regardless: 7,574 cars carrying one person is a property of the owner-household rule, not of the licence draw.
 - No new external data. Everything needed is already in the warehouse: `walk_candidates` (mean 49.4 vehicles within a 10-minute walk per household), `collection_candidates`, `travel_groups`, `muster_points`.
 - `seat_assignments`, `person_seats`, `unmet_demand`, and every downstream route and report are recomputed; the population, homes, vehicles and networks are untouched.
 - Expected direction, not a promise: cars on the road fall from 43,514 toward the 25,564 floor, and unmet demand falls from 10,856 toward the 7 attributable to genuine seat shortage. The walking ceiling, not seat supply, becomes the binding constraint.
