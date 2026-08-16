@@ -21,6 +21,7 @@ network is worst.
 
 from __future__ import annotations
 
+import errno
 import html
 import threading
 from contextlib import ExitStack
@@ -674,7 +675,17 @@ class _Handler(BaseHTTPRequestHandler):
 
 def serve(tool: NoShowTool, host: str = "127.0.0.1", port: int = 8420) -> None:
     """Run until interrupted."""
-    server = ThreadingHTTPServer((host, port), _Handler)
+    try:
+        server = ThreadingHTTPServer((host, port), _Handler)
+    except OSError as error:
+        if error.errno != errno.EADDRINUSE:
+            raise
+        # Restarting the tool a moment after stopping it is the normal way to
+        # meet this, and a bare traceback is a poor answer to it.
+        raise SystemExit(
+            f"Port {port} is busy. Another copy may still be shutting down — "
+            f"wait a moment and try again, or use --port {port + 1}."
+        ) from error
     server.tool = tool  # type: ignore[attr-defined]
     try:
         server.serve_forever()
