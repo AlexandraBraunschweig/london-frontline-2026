@@ -12,6 +12,13 @@ one-car-per-household baseline against a ride-shared scenario.
 
 Planning artifacts live in `openspec/changes/thanet-evacuation-muster-planning/`.
 
+## The slide deck
+
+`deck/index.html` is a reveal.js deck on what the pipeline does and what it
+enables. Open the file — reveal.js is vendored, so it needs no server and no
+install. Its figures are rendered from the warehouse by
+`uv run python deck/make_figures.py`. See `deck/README.md`.
+
 ## Setup
 
 Python is pinned to 3.11 because `pandana` publishes no wheels beyond cp311.
