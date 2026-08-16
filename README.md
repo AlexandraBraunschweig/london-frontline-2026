@@ -1,22 +1,63 @@
-# london-frontline-2026
+# Project Thanet
 
-Synthetic population and evacuation ride-share planning for UK Local Authority
-Districts. First target: Thanet District Council (LAD `E07000114`).
+**Fewer cars, no one left behind.** Synthetic population and evacuation
+ride-share planning for UK Local Authority Districts, first targeted at Thanet
+District Council (LAD `E07000114`).
+
+Built at the Frontline London 2026 hackathon by Alexandra B & Ed K.
+
+## The problem
+
+When a district has to empty at once, history says three things go wrong:
+
+- **Gridlock.** Everyone leaves by car at the same moment, and the queue stops
+  moving while the danger keeps coming: people have died in wildfire
+  evacuations stuck in traffic trying to leave. Too many cars is itself the
+  hazard.
+- **People left behind.** A household without a car has no way out, and the
+  carless are disproportionately the elderly and vulnerable: exactly the
+  people who most need collecting.
+- **Roads blocked for responders.** Emergency services need the streets empty
+  as fast as possible so they can drive *into* the area while everyone else
+  gets out.
+
+The plan examined here answers all three at once: put fewer, fuller cars on
+the road. Use census data to decide who rides with whom, keeping families
+together and prioritising vulnerable groups, so the fleet shrinks, the
+carless get seats, and the network stays moving.
+
+## What the simulation shows
+
+One hour after notification, on the same road network with the same seeded
+mobilisation:
+
+| | One car per household | Ride-shared plan |
+| --- | --- | --- |
+| Cars on the road | 45,919 | 26,557 (42% fewer) |
+| People across the district boundary | 9,197 | 16,144 (76% more) |
+| Gridlocked roads | 4,096 | 2,434 |
+
+At a mean of 4.95 people per car, the plan also carries 20,682 more people in
+total, because a household with no car has no way out of the baseline at all.
+The full findings, and what now limits clearance instead of the fleet, are in
+[What it found](#what-it-found).
+
+## What the pipeline does
 
 The pipeline generates a synthetic population from Census 2021 Output Area
-marginals, places every household at a real UPRN, gives every household car a
-parking spot on the nearest road — that spot **is** a muster point — and (once
-complete) allocates every person to a seat for a single evacuation departure.
-Output is intended to feed a traffic microsimulation comparing a
-one-car-per-household baseline against a ride-shared scenario.
+marginals, places every household at a real UPRN, and gives every household car
+a parking spot on the nearest road; that spot **is** a muster point. Every
+person is then allocated a seat for a single evacuation departure. The output
+feeds two traffic microsimulation backends (MATSim and SUMO) comparing a
+one-car-per-household baseline against the ride-shared scenario.
 
 Planning artifacts live in `openspec/changes/thanet-evacuation-muster-planning/`.
 
 ## The slide deck
 
 `deck/index.html` is a reveal.js deck on what the pipeline does and what it
-enables. Open the file — reveal.js is vendored, so it needs no server and no
-install. Its figures are rendered from the warehouse by
+enables. Open the file directly: reveal.js is vendored, so it needs no server
+and no install. Its figures are rendered from the warehouse by
 `uv run python deck/make_figures.py`. See `deck/README.md`.
 
 ## Setup
@@ -75,7 +116,7 @@ admin_areas -> admin_areas_geojson
 
 ## Inspecting the warehouse
 
-Everything lands in `data/warehouse.duckdb` (gitignored — it is reproducible from
+Everything lands in `data/warehouse.duckdb` (gitignored; it is reproducible from
 a run). Always connect **read-only**:
 
 ```python
@@ -91,7 +132,7 @@ duckdb -readonly data/warehouse.duckdb
 ```
 
 **Close your session before running the pipeline.** DuckDB allows either one
-writer or one or more readers, never both — so an attached reader, even a
+writer or one or more readers, never both, so an attached reader, even a
 read-only one, blocks Dagster from writing and the run fails with:
 
 ```
@@ -148,20 +189,20 @@ COPY (SELECT vehicle_id, snap_distance_m, geometry FROM muster_points USING SAMP
 TO 'data/exports/muster_sample.geojson' WITH (FORMAT GDAL, DRIVER 'GeoJSON');
 ```
 
-## The traffic microsimulation scenario
+## The MATSim scenario
 
 `matsim_scenario` writes a MATSim scenario to `data/exports/matsim/`:
 
 | File | Contents |
 | --- | --- |
-| `population.xml.gz` | one plan per seated person — 131,420 of them |
+| `population.xml.gz` | one plan per seated person: 131,420 of them |
 | `vehicles.xml.gz` | the departing fleet, one entry per car on the road |
 | `households.xml.gz` | households and the cars among them that depart |
 | `config.xml` | minimal runnable config, declaring EPSG:27700 |
 
 Drivers get a `car` leg; passengers get a `ride` leg, which MATSim teleports. So
 the number of vehicles entering the network is exactly the number of cars that
-depart — the quantity the whole ride-share comparison rests on. Note that a
+depart: the quantity the whole ride-share comparison rests on. Note that a
 driver making collection stops has one `car` leg *per hop*, so legs exceed
 vehicles by the number of collection stops.
 
@@ -194,7 +235,7 @@ Link ids are assigned when the network is built and differ between readers and
 between builds, so a scenario keyed on them would break every time the network
 was rebuilt. Way ids are stable across both. MATSim's OSM readers keep the source
 way id on each link, and because MATSim splits ways at junctions, one way maps to
-several links — `way_position_m` says which one, being the distance from the
+several links; `way_position_m` says which one, being the distance from the
 start of the way. Coordinates are published alongside so a location can fall back
 to nearest-link matching if a way is missing from the network build; the count of
 references that fail to resolve is recorded in `scenario_shortfalls` rather than
@@ -216,6 +257,7 @@ pipeline's.
 comparison metric between the one-car-per-household baseline and the pooled
 scenario. Run both against the same network with the same seed and departure
 profile, or the comparison measures the configuration rather than the pooling.
+
 ## Traffic microsimulation (SUMO)
 
 `sumo/` runs the comparison the pipeline exists to feed: the ride-shared plan
@@ -243,10 +285,10 @@ both simulations, and writes:
 | `data/sumo/figures/` | every chart as SVG, both maps as PNG, the table as CSV |
 | `data/sumo/frames/` | one side-by-side map per simulated minute |
 | `data/sumo/timelapse.gif` | those frames animated, minute 0 to minute 60 |
-| `data/sumo/out/*.xml` | the raw SUMO record — summary, tripinfo, per-minute edge data |
+| `data/sumo/out/*.xml` | the raw SUMO record: summary, tripinfo, per-minute edge data |
 
-Stages cost very different amounts — the simulations are tens of minutes, the
-charts are seconds — so they can be run separately:
+Stages cost very different amounts: the simulations are tens of minutes, the
+charts are seconds. They can therefore be run separately:
 
 ```bash
 .venv/bin/python sumo/run_all.py --from analyse   # reuse the runs, redo the output
@@ -267,7 +309,7 @@ scenario reads its departures and exits straight from `vehicle_departures`; the
 baseline is built in `make_trips.py`, since a one-car-per-household fleet is not
 a plan the pipeline produces.
 
-Both simulations stop on the clock rather than when the network empties —
+Both simulations stop on the clock rather than when the network empties:
 neither clears Thanet in any reasonable time, and a run left to finish would be
 compared against one that had simply been given longer. Clearance percentiles
 are measured against everyone who set off, not against the subset that happened
@@ -277,18 +319,18 @@ describing only the fastest few per cent.
 ### What it found
 
 Fleet minimisation works, and it shows on the road. Against a one-car-per-household
-baseline of 45,919 cars, the plan activates **26,557** — 42% fewer — at a mean of
+baseline of 45,919 cars, the plan activates **26,557**, 42% fewer, at a mean of
 4.95 people per car, and still carries 20,682 more people, because a household with
 no car has no way out of the baseline at all. One hour after notification it has moved
-**16,144 people across the district boundary against the baseline's 9,197** — 76% more
-— with 2,434 roads gridlocked rather than 4,096, and roughly half the teleports.
+**16,144 people across the district boundary against the baseline's 9,197**, 76% more,
+with 2,434 roads gridlocked rather than 4,096, and roughly half the teleports.
 
 Neither run clears the district within the hour, and the reason is no longer the
 fleet:
 
 - **One exit carries everything.** Vehicles head for the nearest of Thanet's four
   exits, which sends **90% of them through Ramsgate Road** while Thanet Way takes 579.
-  With the fleet already near its packing floor, this is the binding constraint —
+  With the fleet already near its packing floor, this is the binding constraint:
   emptier cars cannot widen a single road. Choosing exits by expected travel time, or
   balancing across them, is the next thing worth changing.
 - **Simultaneous departure is still fatal.** Released at one instant rather than on
@@ -305,7 +347,7 @@ These are real and recorded, not oversights:
 
 - **Communal establishments are absent.** The population is the *household*
   population, so it sits ~1.4% below the published resident total. Care-home and
-  student-hall residents belong to no household — and they are exactly the people
+  student-hall residents belong to no household, and they are exactly the people
   most likely to need home collection.
 - **24% of under-16s have no qualifying co-resident parent.** Attributes are
   paired independently across marginals, so a household's ages are unrelated to
@@ -321,7 +363,7 @@ These bear directly on any clearance time quoted from a run, and should travel
 with the figure:
 
 - **Exits are infinite-capacity sinks.** The evacuation is scoped to clearing the
-  district, because the road network only covers the district — Canterbury is
+  district, because the road network only covers the district: Canterbury is
   about 9 km beyond where `road_centrelines` stops. Vehicles leaving at the
   boundary never queue on the A299 beyond it, so **clearance time is optimistic,
   most so in the tail**, where the real bottleneck would be downstream. Modelling
@@ -336,8 +378,8 @@ with the figure:
   (all within 292 m) split the corridor and put 90% of the fleet onto a *tertiary*
   way while a trunk way 250 m away took seven vehicles. `crossing_count` on each
   exit says how many crossings it stands for, so over-merging is visible.
-- **The mobilisation curve is provisional.** Its shape is decided — a lognormal
-  delay after notification, since the tail governs clearance — but
+- **The mobilisation curve is provisional.** Its shape is decided (a lognormal
+  delay after notification, since the tail governs clearance), but
   `mobilisation_median_minutes` and `mobilisation_sigma` need grounding in
   evacuation response literature. The current 15-minute median spreads departures
   over about 143 minutes. Recalibrating changes no code.
