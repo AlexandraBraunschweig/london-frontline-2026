@@ -20,6 +20,46 @@ logs/
 .tmp_dagster_home_*/
 tmp*/
 
+# macOS Finder droppings. Currently caught only by .git/info/exclude, which
+# lives in one clone and is never pushed — a fresh clone would commit these.
+.DS_Store
+._*
+
+# Editor state and merge leftovers.
+*.swp
+*.swo
+*~
+*.orig
+*.rej
+.idea/
+.vscode/
+
+# Machine-local Claude Code permissions. The commands and skills beside it are
+# shared on purpose; this file is not.
+.claude/settings.local.json
+
+# Packaging output. The hatchling editable install leaves nothing behind, but
+# `python -m build` and any setuptools fallback do.
+build/
+dist/
+*.egg-info/
+
+# Test and lint caches.
+.coverage
+coverage.xml
+htmlcov/
+.ruff_cache/
+.mypy_cache/
+
+# Credentials. Nothing in this pipeline needs a key today — every source is
+# open — which is exactly the situation in which one gets committed by accident.
+.env
+.env.*
+!.env.example
+
+# Jupyter, for poking at the warehouse interactively.
+.ipynb_checkpoints/
+
 # Vite viewer. viz/public/data is deliberately NOT ignored: it is the trimmed
 # bundle the hosted site serves, and GitHub Pages builds from the repository.
 viz/node_modules/

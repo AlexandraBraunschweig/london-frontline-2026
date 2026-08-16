@@ -22,6 +22,22 @@ LICENSE_CAR = "car"
 LICENSE_BUS = "bus"
 
 
+def _licence_types(
+    rng: np.random.Generator, ages: np.ndarray, planning: PlanningConfig
+) -> np.ndarray:
+    """Assign licence types from age and the configured holding proportions."""
+    draws = rng.random(len(ages))
+    licences = np.full(len(ages), LICENSE_NONE, dtype=object)
+    of_age = ages >= planning.minimum_driving_age
+    licences[of_age & (draws < planning.car_license_proportion)] = LICENSE_CAR
+    licences[
+        of_age
+        & (draws >= planning.car_license_proportion)
+        & (draws < planning.car_license_proportion + planning.bus_license_proportion)
+    ] = LICENSE_BUS
+    return licences
+
+
 @asset(deps=[census_marginals_resolved], group_name="population")
 def synthetic_population(
     context: AssetExecutionContext,
@@ -96,10 +112,26 @@ def synthetic_population(
             composition_marginal["value"].to_numpy(),
             household_total,
         )
+        cars = synthesis.allocate_counts(
+            rng,
+            [
+                # "No cars or vans in household" has no digits and means zero.
+                synthesis.leading_int(name, planning.open_ended_car_count)
+                if any(ch.isdigit() for ch in name)
+                else 0
+                for name in car_marginal["category_name"]
+            ],
+            car_marginal["value"].to_numpy(),
+            household_total,
+        ).astype(int)
+
         household_ids = np.arange(
             next_household_id, next_household_id + household_total
         )
         next_household_id += household_total
+
+        # Households are recorded once, further down, after num_adults is known:
+        # the licence coupling needs the adult count on the same row.
 
         # Persons are generated to fill the household sizes just allocated, so
         # the person count follows the household-size marginal rather than the

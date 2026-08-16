@@ -216,6 +216,88 @@ pipeline's.
 comparison metric between the one-car-per-household baseline and the pooled
 scenario. Run both against the same network with the same seed and departure
 profile, or the comparison measures the configuration rather than the pooling.
+## Traffic microsimulation (SUMO)
+
+`sumo/` runs the comparison the pipeline exists to feed: the ride-shared plan
+against a one-car-per-household baseline, on a real road network.
+
+SUMO ships as pip wheels, so no system install is needed:
+
+```bash
+.venv/bin/python -m pip install eclipse-sumo sumolib traci matplotlib pillow
+```
+
+Then, with the warehouse materialised, one command does everything:
+
+```bash
+.venv/bin/python sumo/run_all.py
+```
+
+It downloads the OSM extract, builds the network, generates both fleets, runs
+both simulations, and writes:
+
+| Output | What it is |
+| --- | --- |
+| `data/sumo/report.html` | the full comparison, one page |
+| `data/sumo/evacuating-thanet.pdf` | the same thing, paginated for print |
+| `data/sumo/figures/` | every chart as SVG, both maps as PNG, the table as CSV |
+| `data/sumo/frames/` | one side-by-side map per simulated minute |
+| `data/sumo/timelapse.gif` | those frames animated, minute 0 to minute 60 |
+| `data/sumo/out/*.xml` | the raw SUMO record — summary, tripinfo, per-minute edge data |
+
+Stages cost very different amounts — the simulations are tens of minutes, the
+charts are seconds — so they can be run separately:
+
+```bash
+.venv/bin/python sumo/run_all.py --from analyse   # reuse the runs, redo the output
+.venv/bin/python sumo/run_all.py --only timelapse # just re-render the animation
+.venv/bin/python sumo/run_all.py --sim-end 7200   # simulate two hours instead of one
+```
+
+Every stage is also a script in its own right (`make_trips.py`,
+`run_scenario.sh`, `analyse.py`, `render_map.py`, `figures.py`, `timelapse.py`,
+`make_meta.py`, `build_report.py`, `export_pdf.sh`) if you want to drive one
+directly.
+
+### How the comparison is kept fair
+
+Both runs share one network, one seeded mobilisation draw and the same district
+exits, so the only difference is which cars depart and who is aboard. The pooled
+scenario reads its departures and exits straight from `vehicle_departures`; the
+baseline is built in `make_trips.py`, since a one-car-per-household fleet is not
+a plan the pipeline produces.
+
+Both simulations stop on the clock rather than when the network empties —
+neither clears Thanet in any reasonable time, and a run left to finish would be
+compared against one that had simply been given longer. Clearance percentiles
+are measured against everyone who set off, not against the subset that happened
+to arrive; against the arrived subset they read like clearance times while
+describing only the fastest few per cent.
+
+### What it found
+
+Fleet minimisation works, and it shows on the road. Against a one-car-per-household
+baseline of 45,919 cars, the plan activates **26,557** — 42% fewer — at a mean of
+4.95 people per car, and still carries 20,682 more people, because a household with
+no car has no way out of the baseline at all. One hour after notification it has moved
+**16,144 people across the district boundary against the baseline's 9,197** — 76% more
+— with 2,434 roads gridlocked rather than 4,096, and roughly half the teleports.
+
+Neither run clears the district within the hour, and the reason is no longer the
+fleet:
+
+- **One exit carries everything.** Vehicles head for the nearest of Thanet's four
+  exits, which sends **90% of them through Ramsgate Road** while Thanet Way takes 579.
+  With the fleet already near its packing floor, this is the binding constraint —
+  emptier cars cannot widen a single road. Choosing exits by expected travel time, or
+  balancing across them, is the next thing worth changing.
+- **Simultaneous departure is still fatal.** Released at one instant rather than on
+  the mobilisation curve, an earlier run gridlocked the district under both plans: 3%
+  of the speed limit, 49 of 45,960 arrived after 20 minutes.
+
+Watch `data/sumo/timelapse.gif` for the hour in one minute: the jam spreads out of
+Ramsgate and Margate along the same arterials in both scenarios, and the difference
+between them is how much of the network is still green when it does.
 
 ## Known limitations
 

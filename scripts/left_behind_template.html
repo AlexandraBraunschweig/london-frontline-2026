@@ -1,0 +1,870 @@
+<title>Left Behind in Thanet</title>
+<style>
+  :root {
+    --ground: #e7edec;
+    --surface: #ffffff;
+    --sea: #e4ecec;
+    --land: #c3d2cf;
+    --land-line: #8ea6a3;
+    --area-line: #93a8a6;
+    --ink: #0f1a1b;
+    --muted: #5b6d6d;
+    --line: #c6d3d1;
+    --accent: #14606e;
+    --accent-soft: #d6e6e8;
+    --vulnerable: #c3271c;
+    --other: #1c7f47;
+    --shadow: 0 1px 2px rgba(15, 26, 27, .06), 0 8px 24px rgba(15, 26, 27, .05);
+    --display: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+    --ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --data: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0d1416;
+      --surface: #151f21;
+      --sea: #0a1113;
+      --land: #213134;
+      --land-line: #44605e;
+      --area-line: #2f4544;
+      --ink: #e4ecea;
+      --muted: #8fa2a1;
+      --line: #243436;
+      --accent: #57b3c2;
+      --accent-soft: #16323a;
+      --vulnerable: #ff5e4c;
+      --other: #3fca79;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .3);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground: #0d1416;
+    --surface: #151f21;
+    --sea: #0a1113;
+    --land: #213134;
+    --land-line: #44605e;
+    --area-line: #2f4544;
+    --ink: #e4ecea;
+    --muted: #8fa2a1;
+    --line: #243436;
+    --accent: #57b3c2;
+    --accent-soft: #16323a;
+    --vulnerable: #ff5e4c;
+    --other: #3fca79;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .3);
+  }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--ui);
+    font-size: 15px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .sheet {
+    max-width: 1240px;
+    margin: 0 auto;
+    padding: clamp(20px, 3vw, 44px) clamp(16px, 3vw, 32px) 56px;
+    display: flex;
+    flex-direction: column;
+    gap: 26px;
+  }
+
+  /* --- masthead --------------------------------------------------------- */
+  .masthead {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px 40px;
+    align-items: end;
+    border-bottom: 2px solid var(--ink);
+    padding-bottom: 18px;
+  }
+
+  .eyebrow {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  h1 {
+    font-family: var(--display);
+    font-size: clamp(30px, 4.6vw, 50px);
+    line-height: 1.04;
+    font-weight: 600;
+    letter-spacing: -.012em;
+    text-wrap: balance;
+    margin-top: 6px;
+  }
+
+  .standfirst {
+    margin-top: 10px;
+    max-width: 58ch;
+    color: var(--muted);
+    font-size: 15.5px;
+  }
+
+  .verdict {
+    text-align: right;
+    font-family: var(--data);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .verdict b {
+    display: block;
+    font-family: var(--display);
+    font-size: clamp(34px, 5vw, 52px);
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: -.02em;
+  }
+
+  .verdict span {
+    display: block;
+    font-family: var(--ui);
+    font-size: 12px;
+    letter-spacing: .04em;
+    color: var(--muted);
+    margin-top: 8px;
+    max-width: 22ch;
+    margin-left: auto;
+    text-align: right;
+  }
+
+  /* --- toolbar ---------------------------------------------------------- */
+  .toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 22px;
+    padding: 11px 14px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+  }
+
+  .key {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    font-size: 13px;
+  }
+
+  .key i {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    margin-right: 7px;
+    vertical-align: -1px;
+  }
+
+  .key .swatch-vulnerable { background: var(--vulnerable); }
+  .key .swatch-other { background: var(--other); }
+
+  .spacer { flex: 1 1 auto; }
+
+  .switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 13px;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .switch input { accent-color: var(--accent); width: 15px; height: 15px; }
+
+  .zoomers { display: inline-flex; gap: 6px; }
+
+  button {
+    font: inherit;
+    font-size: 13px;
+    color: var(--ink);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 4px 11px;
+    cursor: pointer;
+    line-height: 1.5;
+  }
+
+  button:hover { border-color: var(--accent); color: var(--accent); }
+
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  /* --- maps ------------------------------------------------------------- */
+  .maps {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+  }
+
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    overflow: hidden;
+    box-shadow: var(--shadow);
+    display: flex;
+    flex-direction: column;
+  }
+
+  .panel-head {
+    padding: 14px 16px 13px;
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+  }
+
+  .panel-title {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 14px;
+  }
+
+  .panel-title h2 {
+    font-family: var(--display);
+    font-size: 21px;
+    font-weight: 600;
+    letter-spacing: -.008em;
+  }
+
+  .panel-title p {
+    font-size: 12.5px;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+
+  .tally {
+    font-family: var(--data);
+    font-variant-numeric: tabular-nums;
+    font-size: 24px;
+    font-weight: 500;
+    letter-spacing: -.02em;
+    white-space: nowrap;
+  }
+
+  .tally em {
+    display: block;
+    font: 400 11px/1.4 var(--ui);
+    font-style: normal;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    color: var(--muted);
+    text-align: right;
+  }
+
+  .bar {
+    height: 9px;
+    background: var(--ground);
+    border-radius: 1px;
+    display: flex;
+    overflow: hidden;
+  }
+
+  .bar span { display: block; height: 100%; }
+  .bar .seg-vulnerable { background: var(--vulnerable); }
+  .bar .seg-other { background: var(--other); }
+
+  .bar-note {
+    font-size: 12px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .plot {
+    position: relative;
+    aspect-ratio: 3 / 2;
+    background: var(--sea);
+  }
+
+  canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+  canvas.dragging { cursor: grabbing; }
+
+  .scalebar {
+    position: absolute;
+    left: 14px;
+    bottom: 12px;
+    font-family: var(--data);
+    font-size: 10.5px;
+    color: var(--muted);
+    letter-spacing: .04em;
+    pointer-events: none;
+  }
+
+  .scalebar u {
+    display: block;
+    height: 4px;
+    border: 1px solid var(--muted);
+    border-top: 0;
+    margin-bottom: 3px;
+  }
+
+  /* --- figures ---------------------------------------------------------- */
+  .figures { display: flex; flex-direction: column; gap: 12px; }
+
+  h3 {
+    font-family: var(--display);
+    font-size: 19px;
+    font-weight: 600;
+  }
+
+  .table-wrap { overflow-x: auto; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+    font-variant-numeric: tabular-nums;
+    min-width: 560px;
+  }
+
+  th, td { padding: 9px 12px; text-align: right; border-bottom: 1px solid var(--line); }
+  th:first-child, td:first-child { text-align: left; }
+
+  thead th {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    color: var(--muted);
+    border-bottom: 1px solid var(--ink);
+  }
+
+  tbody td { font-family: var(--data); }
+  tbody td:first-child { font-family: var(--ui); }
+  tbody tr:last-child td { border-bottom: 0; }
+
+  tr.saving td {
+    color: var(--accent);
+    font-weight: 600;
+    background: var(--accent-soft);
+  }
+
+  .notes {
+    border-top: 1px solid var(--line);
+    padding-top: 16px;
+    color: var(--muted);
+    font-size: 13px;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    max-width: 78ch;
+  }
+
+  .notes b { color: var(--ink); font-weight: 600; }
+
+  @media (max-width: 860px) {
+    .masthead { grid-template-columns: minmax(0, 1fr); }
+    .verdict { text-align: left; }
+    .verdict span { margin-left: 0; text-align: left; }
+    .maps { grid-template-columns: minmax(0, 1fr); }
+  }
+</style>
+
+<div class="sheet">
+  <header class="masthead">
+    <div>
+      <p class="eyebrow">Thanet District &middot; evacuation modelling</p>
+      <h1>Left Behind in Thanet</h1>
+      <p class="standfirst">
+        Every dot is one resident no vehicle collects, plotted at home. The two
+        maps run the same population, the same cars and the same district
+        through two different rules for who rides in them.
+      </p>
+    </div>
+    <div class="verdict">
+      <b id="verdict-figure">&mdash;</b>
+      <span id="verdict-caption">people the shared plan gets out who would otherwise be stranded</span>
+    </div>
+  </header>
+
+  <div class="toolbar">
+    <div class="key">
+      <span><i class="swatch-vulnerable"></i>Needs assistance</span>
+      <span><i class="swatch-other"></i>Fit to travel, no lift</span>
+    </div>
+    <div class="spacer"></div>
+    <label class="switch">
+      <input type="checkbox" id="only-vulnerable">
+      Only those needing assistance
+    </label>
+    <label class="switch">
+      <input type="checkbox" id="require-driver">
+      Baseline needs a licensed driver at home
+    </label>
+    <div class="zoomers">
+      <button type="button" id="zoom-in" aria-label="Zoom in">&plus;</button>
+      <button type="button" id="zoom-out" aria-label="Zoom out">&minus;</button>
+      <button type="button" id="zoom-reset">Reset view</button>
+    </div>
+  </div>
+
+  <div class="maps">
+    <figure class="panel">
+      <figcaption class="panel-head">
+        <div class="panel-title">
+          <div>
+            <h2>Shared plan</h2>
+            <p>Spare seats go to neighbours, on foot or collected</p>
+          </div>
+          <div class="tally"><span id="tally-plan">&mdash;</span><em>left behind</em></div>
+        </div>
+        <div class="bar">
+          <span class="seg-vulnerable" id="bar-plan-vulnerable"></span>
+          <span class="seg-other" id="bar-plan-other"></span>
+        </div>
+        <p class="bar-note" id="note-plan">&nbsp;</p>
+      </figcaption>
+      <div class="plot">
+        <canvas id="canvas-plan" role="img"
+                aria-label="Map of Thanet showing residents left behind under the shared plan"></canvas>
+        <div class="scalebar"><u style="width:80px"></u><span id="scale-plan"></span></div>
+      </div>
+    </figure>
+
+    <figure class="panel">
+      <figcaption class="panel-head">
+        <div class="panel-title">
+          <div>
+            <h2>Everyone for themselves</h2>
+            <p>Each household drives its own cars, its own people only</p>
+          </div>
+          <div class="tally"><span id="tally-baseline">&mdash;</span><em>left behind</em></div>
+        </div>
+        <div class="bar">
+          <span class="seg-vulnerable" id="bar-baseline-vulnerable"></span>
+          <span class="seg-other" id="bar-baseline-other"></span>
+        </div>
+        <p class="bar-note" id="note-baseline">&nbsp;</p>
+      </figcaption>
+      <div class="plot">
+        <canvas id="canvas-baseline" role="img"
+                aria-label="Map of Thanet showing residents left behind when every household drives itself"></canvas>
+        <div class="scalebar"><u style="width:80px"></u><span id="scale-baseline"></span></div>
+      </div>
+    </figure>
+  </div>
+
+  <section class="figures">
+    <h3>The figures behind the dots</h3>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Scenario</th>
+            <th scope="col">Left behind</th>
+            <th scope="col">Needs assistance</th>
+            <th scope="col">Fit to travel</th>
+            <th scope="col">Share of residents</th>
+          </tr>
+        </thead>
+        <tbody id="figures-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer class="notes">
+    <p>
+      <b>Who is red.</b> Anyone aged <span id="note-age"></span> or over, or
+      recorded in Census 2021 as disabled enough that they cannot walk to a
+      neighbouring street. <span id="note-vulnerable-total"></span> of the
+      district&rsquo;s <span id="note-population"></span> residents meet that test.
+    </p>
+    <p>
+      <b>Who is green.</b> Everyone else with no seat &mdash; fit to walk to a
+      muster point, but with no car in the household and, in the baseline, no
+      neighbour obliged to offer a lift.
+    </p>
+    <p>
+      <b>Placement.</b> Each dot sits at its household&rsquo;s dwelling point,
+      nudged within a nine-metre disc so co-residents stay countable. Dark
+      patches are dense housing, not modelling artefacts.
+    </p>
+    <p>
+      <b>Baseline definition.</b> A household with cars seats its own people up
+      to its own capacity, oldest and least mobile first; nobody else may board.
+      The shared plan already refuses to send a car with no licensed driver in
+      it &mdash; tick the driver switch to hold the baseline to the same rule.
+    </p>
+  </footer>
+</div>
+
+<script>
+  const DATA = __PAYLOAD__;
+
+  const decode = (b64, Type) => {
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new Type(bytes.buffer);
+  };
+
+  const QUANT = 65535;
+  const points = {};
+  for (const [name, blob] of Object.entries(DATA.points)) {
+    points[name] = decode(blob, Uint16Array);
+  }
+
+  const decodeRings = (source) => {
+    const lengths = decode(source.lengths, Uint32Array);
+    const coords = decode(source.coords, Uint16Array);
+    const rings = [];
+    let offset = 0;
+    for (const length of lengths) {
+      rings.push(coords.subarray(offset, offset + length * 2));
+      offset += length * 2;
+    }
+    return rings;
+  };
+
+  const coastRings = decodeRings(DATA.coast);
+  const areaRings = decodeRings(DATA.areas);
+
+  const styles = getComputedStyle(document.documentElement);
+  const colour = (name) => styles.getPropertyValue(name).trim();
+
+  // The district's box in world units; the longer axis is the frame's full 1.0.
+  const EXTENT = DATA.aspect >= 1 ? [1, 1 / DATA.aspect] : [DATA.aspect, 1];
+
+  for (const plot of document.querySelectorAll(".plot")) {
+    plot.style.aspectRatio = String(DATA.aspect);
+  }
+
+  const view = { x: 0.5, y: 0.5, zoom: 1 };
+  const state = { onlyVulnerable: false, requireDriver: false };
+  const format = new Intl.NumberFormat("en-GB");
+
+  /* A dot is drawn from a cached sprite: 35,000 drawImage calls beat 35,000
+     arcs by an order of magnitude, and the sprite keeps the edges smooth. */
+  const sprites = new Map();
+  const spriteFor = (fill, radius) => {
+    const key = fill + "|" + radius;
+    let sprite = sprites.get(key);
+    if (sprite) return sprite;
+    const size = Math.ceil(radius * 2) + 2;
+    sprite = document.createElement("canvas");
+    sprite.width = sprite.height = size;
+    const pen = sprite.getContext("2d");
+    pen.fillStyle = fill;
+    pen.beginPath();
+    pen.arc(size / 2, size / 2, radius, 0, Math.PI * 2);
+    pen.fill();
+    sprites.set(key, sprite);
+    return sprite;
+  };
+
+  const sliceOf = (coords, slice, slices) => {
+    const pairs = coords.length / 2;
+    const from = Math.floor(pairs * slice / slices) * 2;
+    const to = Math.floor(pairs * (slice + 1) / slices) * 2;
+    return coords.subarray(from, to);
+  };
+
+  class Panel {
+    constructor(canvasId, scenarioFor) {
+      this.canvas = document.getElementById(canvasId);
+      this.context = this.canvas.getContext("2d");
+      this.scenarioFor = scenarioFor;
+      this.ratio = 1;
+      this.bindPointer();
+      new ResizeObserver(() => this.resize()).observe(this.canvas);
+    }
+
+    resize() {
+      const box = this.canvas.getBoundingClientRect();
+      if (!box.width) return;
+      this.ratio = Math.min(window.devicePixelRatio || 1, 2);
+      this.canvas.width = Math.round(box.width * this.ratio);
+      this.canvas.height = Math.round(box.height * this.ratio);
+      draw();
+    }
+
+    /* World coordinates run 0..1 with north up. The frame is square but the
+       district is not, so the visible extent is the district's own box —
+       fitting that, rather than the square, is what removes the dead margins.
+       One shared span keeps both panels on the same projection. */
+    get span() {
+      return Math.min(
+        this.canvas.width / EXTENT[0],
+        this.canvas.height / EXTENT[1]
+      ) * view.zoom;
+    }
+
+    toScreen(u, v) {
+      return [
+        (u - view.x) * this.span + this.canvas.width / 2,
+        (v - view.y) * this.span + this.canvas.height / 2,
+      ];
+    }
+
+    toWorld(px, py) {
+      return [
+        (px - this.canvas.width / 2) / this.span + view.x,
+        (py - this.canvas.height / 2) / this.span + view.y,
+      ];
+    }
+
+    bindPointer() {
+      let dragging = false;
+      let last = [0, 0];
+
+      this.canvas.addEventListener("pointerdown", (event) => {
+        dragging = true;
+        last = [event.clientX, event.clientY];
+        this.canvas.setPointerCapture(event.pointerId);
+        this.canvas.classList.add("dragging");
+      });
+
+      this.canvas.addEventListener("pointermove", (event) => {
+        if (!dragging) return;
+        const scale = this.span / this.ratio;
+        view.x -= (event.clientX - last[0]) / scale;
+        view.y -= (event.clientY - last[1]) / scale;
+        last = [event.clientX, event.clientY];
+        clampView();
+        draw();
+      });
+
+      const release = (event) => {
+        dragging = false;
+        this.canvas.classList.remove("dragging");
+        if (event.pointerId !== undefined && this.canvas.hasPointerCapture(event.pointerId)) {
+          this.canvas.releasePointerCapture(event.pointerId);
+        }
+      };
+      this.canvas.addEventListener("pointerup", release);
+      this.canvas.addEventListener("pointercancel", release);
+
+      this.canvas.addEventListener("wheel", (event) => {
+        event.preventDefault();
+        const box = this.canvas.getBoundingClientRect();
+        const px = (event.clientX - box.left) * this.ratio;
+        const py = (event.clientY - box.top) * this.ratio;
+        const before = this.toWorld(px, py);
+        zoomBy(Math.exp(-event.deltaY * 0.0016));
+        const after = this.toWorld(px, py);
+        view.x += before[0] - after[0];
+        view.y += before[1] - after[1];
+        clampView();
+        draw();
+      }, { passive: false });
+    }
+
+    paintRings(rings, { fill, stroke, width, alpha }) {
+      const pen = this.context;
+      pen.beginPath();
+      for (const ring of rings) {
+        for (let i = 0; i < ring.length; i += 2) {
+          const [x, y] = this.toScreen(ring[i] / QUANT, 1 - ring[i + 1] / QUANT);
+          if (i === 0) pen.moveTo(x, y); else pen.lineTo(x, y);
+        }
+        pen.closePath();
+      }
+      pen.globalAlpha = alpha;
+      if (fill) {
+        pen.fillStyle = fill;
+        pen.fill("evenodd");
+      }
+      if (stroke) {
+        pen.strokeStyle = stroke;
+        pen.lineWidth = width;
+        pen.stroke();
+      }
+      pen.globalAlpha = 1;
+    }
+
+    paintPoints(coords, fill, radius) {
+      const pen = this.context;
+      const sprite = spriteFor(fill, radius);
+      const half = sprite.width / 2;
+      const maxX = this.canvas.width + half;
+      const maxY = this.canvas.height + half;
+      for (let i = 0; i < coords.length; i += 2) {
+        const [x, y] = this.toScreen(coords[i] / QUANT, 1 - coords[i + 1] / QUANT);
+        if (x < -half || y < -half || x > maxX || y > maxY) continue;
+        pen.drawImage(sprite, x - half, y - half);
+      }
+    }
+
+    draw() {
+      const pen = this.context;
+      const { width, height } = this.canvas;
+      if (!width) return;
+      pen.setTransform(1, 0, 0, 1, 0, 0);
+      pen.clearRect(0, 0, width, height);
+
+      this.paintRings(coastRings, {
+        fill: colour("--land"),
+        stroke: colour("--land-line"),
+        width: 1 * this.ratio,
+        alpha: 1,
+      });
+
+      if (view.zoom > 2.2) {
+        this.paintRings(areaRings, {
+          stroke: colour("--area-line"),
+          width: 0.75 * this.ratio,
+          alpha: Math.min((view.zoom - 2.2) / 2.5, 0.55),
+        });
+      }
+
+      const radius = Math.max(0.85, Math.min(1.1 * Math.pow(view.zoom, 0.45), 7)) * this.ratio;
+      const scenario = this.scenarioFor();
+      pen.globalAlpha = 0.78;
+      const vulnerable = points[scenario + "_vulnerable"];
+      if (state.onlyVulnerable) {
+        this.paintPoints(vulnerable, colour("--vulnerable"), radius);
+      } else {
+        /* Painting one colour wholly over the other would make the smaller set
+           look like the larger one wherever dots overlap, which at this density
+           is everywhere. Alternating slices interleaves them instead: both sets
+           are in person order, which is spatially unsorted, so a slice is a
+           fair sample of the district. */
+        const other = points[scenario + "_other"];
+        const otherFill = colour("--other");
+        const vulnerableFill = colour("--vulnerable");
+        const slices = 60;
+        for (let slice = 0; slice < slices; slice++) {
+          this.paintPoints(sliceOf(other, slice, slices), otherFill, radius);
+          this.paintPoints(sliceOf(vulnerable, slice, slices), vulnerableFill, radius);
+        }
+      }
+      pen.globalAlpha = 1;
+    }
+  }
+
+  const baselineScenario = () =>
+    state.requireDriver ? "baseline_licensed" : "baseline";
+
+  const panels = [
+    new Panel("canvas-plan", () => "plan"),
+    new Panel("canvas-baseline", baselineScenario),
+  ];
+
+  const clampView = () => {
+    const edge = 0.5 / view.zoom;
+    view.x = Math.min(Math.max(view.x, edge - 0.15), 1 - edge + 0.15);
+    view.y = Math.min(Math.max(view.y, edge - 0.15), 1 - edge + 0.15);
+  };
+
+  const zoomBy = (factor) => {
+    view.zoom = Math.min(Math.max(view.zoom * factor, 1), 40);
+  };
+
+  /* The frame is a square of known width on the ground, so a bar of fixed
+     pixel width states a real distance. */
+  const updateScale = () => {
+    for (const [id, panel] of [["scale-plan", panels[0]], ["scale-baseline", panels[1]]]) {
+      const metres = (80 * panel.ratio / panel.span) * DATA.spanMetres;
+      const label = metres >= 1000
+        ? (metres / 1000).toFixed(metres >= 10000 ? 0 : 1) + " km"
+        : Math.round(metres / 10) * 10 + " m";
+      document.getElementById(id).textContent = label;
+    }
+  };
+
+  const draw = () => {
+    for (const panel of panels) panel.draw();
+    updateScale();
+  };
+
+  /* --- headline, bars and table ---------------------------------------- */
+  const counts = DATA.counts;
+  const population = DATA.population;
+  const share = (value) => (100 * value / population).toFixed(1) + "%";
+
+  const scenarioLabels = {
+    plan: "Shared plan",
+    baseline: "Everyone for themselves",
+    baseline_licensed: "Everyone for themselves, licensed driver required",
+  };
+
+  const paintHeadline = () => {
+    const baseline = baselineScenario();
+    const rescued = counts[baseline] - counts.plan;
+    document.getElementById("verdict-figure").textContent = format.format(rescued);
+    document.getElementById("verdict-caption").textContent =
+      "people the shared plan gets out who would otherwise be stranded, "
+      + format.format(counts[baseline + "_vulnerable"] - counts.plan_vulnerable)
+      + " of them needing assistance";
+
+    for (const [key, scenario] of [["plan", "plan"], ["baseline", baseline]]) {
+      const total = counts[scenario];
+      const vulnerable = counts[scenario + "_vulnerable"];
+      document.getElementById("tally-" + key).textContent = format.format(total);
+      document.getElementById("bar-" + key + "-vulnerable").style.width =
+        (100 * vulnerable / population) + "%";
+      document.getElementById("bar-" + key + "-other").style.width =
+        (100 * (total - vulnerable) / population) + "%";
+      document.getElementById("note-" + key).textContent =
+        share(total) + " of residents \u2014 " + format.format(vulnerable)
+        + " of them need assistance";
+    }
+
+    const rows = ["plan", baseline];
+    const body = document.getElementById("figures-body");
+    body.innerHTML = "";
+    for (const scenario of rows) {
+      const total = counts[scenario];
+      const vulnerable = counts[scenario + "_vulnerable"];
+      body.insertAdjacentHTML("beforeend",
+        "<tr><td>" + scenarioLabels[scenario] + "</td><td>" + format.format(total)
+        + "</td><td>" + format.format(vulnerable) + "</td><td>"
+        + format.format(total - vulnerable) + "</td><td>" + share(total) + "</td></tr>");
+    }
+    body.insertAdjacentHTML("beforeend",
+      "<tr class=\"saving\"><td>Difference</td><td>"
+      + format.format(counts[baseline] - counts.plan) + "</td><td>"
+      + format.format(counts[baseline + "_vulnerable"] - counts.plan_vulnerable)
+      + "</td><td>"
+      + format.format((counts[baseline] - counts[baseline + "_vulnerable"])
+                      - (counts.plan - counts.plan_vulnerable))
+      + "</td><td>" + share(counts[baseline] - counts.plan) + "</td></tr>");
+  };
+
+  document.getElementById("note-age").textContent = DATA.vulnerableAge;
+  document.getElementById("note-vulnerable-total").textContent =
+    format.format(DATA.vulnerableTotal);
+  document.getElementById("note-population").textContent = format.format(population);
+
+  document.getElementById("only-vulnerable").addEventListener("change", (event) => {
+    state.onlyVulnerable = event.target.checked;
+    draw();
+  });
+
+  document.getElementById("require-driver").addEventListener("change", (event) => {
+    state.requireDriver = event.target.checked;
+    paintHeadline();
+    draw();
+  });
+
+  document.getElementById("zoom-in").addEventListener("click", () => {
+    zoomBy(1.6); clampView(); draw();
+  });
+  document.getElementById("zoom-out").addEventListener("click", () => {
+    zoomBy(1 / 1.6); clampView(); draw();
+  });
+  document.getElementById("zoom-reset").addEventListener("click", () => {
+    view.x = view.y = 0.5; view.zoom = 1; draw();
+  });
+
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+    sprites.clear();
+    draw();
+  });
+
+  paintHeadline();
+  for (const panel of panels) panel.resize();
+</script>

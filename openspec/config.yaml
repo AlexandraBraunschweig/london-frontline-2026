@@ -3,6 +3,7 @@ schema: spec-driven
 context: |
   Domain: synthetic population generation and evacuation ride-share planning for UK
   Local Authority Districts. First target: Thanet District Council, LAD E07000114.
+<<<<<<< Updated upstream
   The output feeds a traffic microsimulation (MATSim) comparing a
   one-car-per-household evacuation baseline against a ride-shared scenario.
   MATSim replaced UDST MANTA: MANTA is OD-pair based, and the plan's home
@@ -12,6 +13,10 @@ context: |
   corrupt the quantity the project exists to measure. The pipeline emits the
   scenario but NOT the network: MATSim's own OpenStreetMap reader builds that,
   and locations bind to it by OSM way id rather than by link id.
+=======
+  The output feeds a later traffic microsimulation (UDST MANTA) comparing a
+  one-car-per-household evacuation baseline against a ride-shared scenario.
+>>>>>>> Stashed changes
 
   Tech stack: Python, Dagster (assets), DuckDB with the spatial extension,
   pandana/osmnet for pedestrian network queries, networkx for graph work over the

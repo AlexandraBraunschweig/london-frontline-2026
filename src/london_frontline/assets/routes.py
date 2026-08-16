@@ -36,11 +36,13 @@ def vehicle_routes(
 
     The muster point is always the first stop — it is where the vehicle is
     parked. Home-collection households follow, ordered outward from it. Meeting
-    times accumulate along the route from a single fleet-wide departure, using
-    straight-line distance at a configured average speed; no congestion is
-    modelled, which is the downstream microsimulation's job.
+    times accumulate along the route from a single fleet-wide departure: a
+    configured dwell for each stop already made, plus straight-line distance at
+    a configured average speed. No congestion is modelled, which is the
+    downstream microsimulation's job.
     """
     speed_m_per_second = planning.average_driving_speed_kph * 1000.0 / 3600.0
+    dwell_seconds = planning.stop_dwell_minutes * 60.0
 
     with warehouse.connect() as conn:
         # --- Leader: a car-licensed occupant, preferring the owner household --
@@ -129,7 +131,10 @@ def vehicle_routes(
                          sum(leg_m) OVER (
                              PARTITION BY muster_point_id ORDER BY stop_seq
                          ) / {speed_m_per_second}
-                       ) AS meeting_time
+                       )
+                     -- Every earlier stop cost its dwell before this one begins.
+                     + to_seconds({dwell_seconds} * (stop_seq - 1))
+                       AS meeting_time
             FROM legs
             """
         )
