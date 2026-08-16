@@ -12,9 +12,33 @@ import json
 from pathlib import Path
 
 SERIES = {
-    "baseline": {"label": "One car per household", "var": "--series-baseline"},
-    "pooled": {"label": "Ride-shared plan", "var": "--series-pooled"},
+    "baseline": {
+        "label": "One car per household",
+        "var": "--series-baseline",
+        "colour": "#d2521c",
+    },
+    "pooled": {
+        "label": "Ride-shared plan",
+        "var": "--series-pooled",
+        "colour": "#1f66bd",
+    },
 }
+
+# Concrete equivalents of the page's ink tokens, for charts written out as their
+# own files: a standalone SVG has no page around it to inherit variables from.
+STANDALONE_STYLE = """
+.grid{stroke:#d9dde1;stroke-width:1}
+.axis{stroke:#79828d;stroke-width:1}
+.series{fill:none;stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+.endpoint{stroke:#ffffff;stroke-width:2}
+.tick{font:500 11px ui-monospace,SFMono-Regular,Menlo,monospace;fill:#79828d}
+.tick-y{text-anchor:end}
+.tick-x{text-anchor:middle}
+.axis-label{font:500 11px ui-sans-serif,system-ui,sans-serif;fill:#79828d;
+  text-anchor:middle}
+.series-label{font:600 12px ui-sans-serif,system-ui,sans-serif;fill:#4d555f}
+.chart-title{font:640 15px ui-sans-serif,system-ui,sans-serif;fill:#14181d}
+"""
 
 
 def _fmt_minutes(seconds: float | None) -> str:
@@ -38,9 +62,16 @@ def _line_chart(
     x_label: str,
     y_label: str,
     y_format=lambda v: f"{v:,.0f}",
+    standalone: bool = False,
+    title: str | None = None,
 ) -> str:
-    """A two-series line chart as inline SVG, styled through CSS variables."""
-    pad_l, pad_r, pad_t, pad_b = 64, 96, 16, 40
+    """A two-series line chart as SVG.
+
+    Embedded in the page it draws its colours from CSS variables so it follows
+    the theme. Written out as its own file it carries baked colours and its own
+    stylesheet instead, since there is no page to inherit from.
+    """
+    pad_l, pad_r, pad_t, pad_b = 64, 96, (40 if standalone and title else 16), 40
     plot_w = width - pad_l - pad_r
     plot_h = height - pad_t - pad_b
 
@@ -50,10 +81,22 @@ def _line_chart(
     def sy(value: float) -> float:
         return pad_t + plot_h - (value / y_max) * plot_h if y_max else pad_t + plot_h
 
-    parts = [
-        f'<svg viewBox="0 0 {width} {height}" class="chart" role="img" '
-        f'aria-label="{y_label} against {x_label}">'
-    ]
+    if standalone:
+        parts = [
+            f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" '
+            f'height="{height}" viewBox="0 0 {width} {height}" role="img" '
+            f'aria-label="{y_label} against {x_label}">',
+            f"<style>{STANDALONE_STYLE}</style>",
+            f'<rect width="{width}" height="{height}" fill="#ffffff"/>',
+        ]
+        if title:
+            parts.append(f'<text class="chart-title" x="{pad_l - 50}" y="24">'
+                         f"{title}</text>")
+    else:
+        parts = [
+            f'<svg viewBox="0 0 {width} {height}" class="chart" role="img" '
+            f'aria-label="{y_label} against {x_label}">'
+        ]
     # Recessive grid first.
     for tick in y_ticks:
         y = sy(tick)
@@ -81,18 +124,19 @@ def _line_chart(
     )
 
     for entry in series:
+        stroke = entry["colour"] if standalone else f'var({entry["var"]})'
         points = " ".join(
             f"{sx(x):.1f},{sy(y):.1f}" for x, y in zip(entry["x"], entry["y"])
         )
         parts.append(
             f'<polyline class="series" points="{points}" '
-            f'style="stroke:var({entry["var"]})"/>'
+            f'style="stroke:{stroke}"/>'
         )
         # Direct label at the line's end, so identity is never colour-alone.
         end_x, end_y = entry["x"][-1], entry["y"][-1]
         parts.append(
             f'<circle class="endpoint" cx="{sx(end_x):.1f}" cy="{sy(end_y):.1f}" '
-            f'r="4" style="fill:var({entry["var"]})"/>'
+            f'r="4" style="fill:{stroke}"/>'
         )
         parts.append(
             f'<text class="series-label" x="{sx(end_x) + 10:.1f}" '
@@ -100,6 +144,44 @@ def _line_chart(
         )
     parts.append("</svg>")
     return "".join(parts)
+
+
+def series_for(comparison: dict, field: str) -> list[dict]:
+    """A per-step summary series for both scenarios, ready to plot."""
+    out = []
+    for key in ("baseline", "pooled"):
+        xs = comparison[key]["series"]["time_s"]
+        ys = comparison[key]["series"][field]
+        # Before the first car is inserted SUMO reports no mean speed, which
+        # arrives here as NaN; those steps have nothing to plot.
+        pairs = [(x, y) for x, y in zip(xs, ys) if y == y]
+        out.append({
+            "x": [x for x, _ in pairs],
+            "y": [y for _, y in pairs],
+            "label": SERIES[key]["label"],
+            "var": SERIES[key]["var"],
+            "colour": SERIES[key]["colour"],
+        })
+    return out
+
+
+def arrivals_for(comparison: dict, field: str) -> list[dict]:
+    """A cumulative arrival curve for both scenarios."""
+    return [
+        {
+            "x": comparison[key]["arrivals"]["time_s"],
+            "y": comparison[key]["arrivals"][field],
+            "label": SERIES[key]["label"],
+            "var": SERIES[key]["var"],
+            "colour": SERIES[key]["colour"],
+        }
+        for key in ("baseline", "pooled")
+    ]
+
+
+def ticks(maximum: float, count: int = 5) -> list[float]:
+    step = maximum / count
+    return [round(step * i) for i in range(count + 1)]
 
 
 def build(comparison: dict, maps: dict, meta: dict) -> str:
@@ -110,33 +192,19 @@ def build(comparison: dict, maps: dict, meta: dict) -> str:
     cars_saved_pct = 100 * cars_saved / baseline["vehicles_departed"]
     people_extra = pooled["people_carried"] - baseline["people_carried"]
     horizon_label = _fmt_minutes(baseline["horizon_s"])
+    people_gain_pct = (
+        100 * (pooled["people_cleared_by_horizon"]
+               - baseline["people_cleared_by_horizon"])
+        / max(baseline["people_cleared_by_horizon"], 1)
+    )
 
-    def series_for(field: str) -> list[dict]:
-        out = []
-        for key in ("baseline", "pooled"):
-            xs = comparison[key]["series"]["time_s"]
-            ys = comparison[key]["series"][field]
-            # Before the first car is inserted SUMO reports no mean speed, which
-            # arrives here as NaN; those steps have nothing to plot.
-            pairs = [(x, y) for x, y in zip(xs, ys) if y == y]
-            out.append({
-                "x": [x for x, _ in pairs],
-                "y": [y for _, y in pairs],
-                "label": SERIES[key]["label"],
-                "var": SERIES[key]["var"],
-            })
-        return out
-
-    running_series = series_for("running")
-    speed_series = series_for("speed_relative_pct")
+    running_series = series_for(comparison, "running")
+    speed_series = series_for(comparison, "speed_relative_pct")
+    people_series = arrivals_for(comparison, "people")
 
     running_max = max(max(s["y"]) for s in running_series)
     speed_max = max(max(s["y"]) for s in speed_series)
     time_max = max(max(s["x"]) for s in running_series)
-
-    def ticks(maximum: float, count: int = 5) -> list[float]:
-        step = maximum / count
-        return [round(step * i) for i in range(count + 1)]
 
     running_chart = _line_chart(
         running_series,
@@ -151,6 +219,15 @@ def build(comparison: dict, maps: dict, meta: dict) -> str:
         x_label="minutes after the alarm", y_label="speed as a share of the limit",
         y_format=lambda v: f"{v:,.0f}%",
     )
+    people_max = max(max(s["y"]) for s in people_series)
+    people_time_max = max(max(s["x"]) for s in people_series)
+    people_chart = _line_chart(
+        people_series,
+        x_max=people_time_max, y_max=people_max,
+        x_ticks=ticks(people_time_max, 6), y_ticks=ticks(people_max),
+        x_label="minutes after the alarm", y_label="people clear of the district",
+        y_format=lambda v: f"{v / 1000:,.0f}k" if v else "0",
+    )
 
     band_legend = "".join(
         f'<li><span class="swatch" style="background:{b["colour"]}"></span>'
@@ -163,12 +240,14 @@ def build(comparison: dict, maps: dict, meta: dict) -> str:
             ("Cars sent out", "{:,}", "vehicles_departed"),
             ("People carried", "{:,}", "people_carried"),
             ("Mean people per car", "{:.2f}", "mean_occupancy"),
+            ("People clear of the district", "{:,}", "people_cleared_by_horizon"),
+            ("…as a share of those carried", "{:.1f}%", "people_cleared_pct"),
+            ("Cars clear of the district", "{:,}", "vehicles_arrived"),
             ("Cars still on the road", "{:,}", "final_running"),
             ("…of those, stationary", "{:,}", "final_halting"),
             ("Share stationary", "{:.1f}%", "stationary_share_pct"),
             ("Speed vs the limit", "{:.1%}", "final_speed_relative"),
             ("Peak cars at once", "{:,}", "peak_running"),
-            ("Reached Canterbury", "{:,}", "arrived_by_horizon"),
             ("Gridlock teleports", "{:,}", "teleports"),
         ]
         out = []
@@ -181,6 +260,19 @@ def build(comparison: dict, maps: dict, meta: dict) -> str:
 
     map_stats = maps["stats"]
     snapshot_min = maps["snapshot_s"] / 60
+
+    loading = meta.get("exit_loading", [])
+    loading_total = sum(row["vehicles"] for row in loading) or 1
+    busiest = loading[0] if loading else {"name": "—", "vehicles": 0}
+    busiest_share = 100 * busiest["vehicles"] / loading_total
+    exit_bars = "".join(
+        f'<li><div class="exit-name">{row["name"]}'
+        f'<span class="exit-class">{row["highway"]}</span></div>'
+        f'<div class="exit-track"><div class="exit-fill" '
+        f'style="width:{100 * row["vehicles"] / loading_total:.1f}%"></div></div>'
+        f'<div class="exit-count">{row["vehicles"]:,}</div></li>'
+        for row in loading
+    )
 
     return f"""<title>Evacuating Thanet</title>
 <style>
@@ -353,6 +445,18 @@ thead th:first-child {{ text-align: left; }}
 .col-base {{ color: var(--series-baseline); }}
 .col-pool {{ color: var(--series-pooled); }}
 
+.exits {{ list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }}
+.exits li {{ display: grid; grid-template-columns: 210px 1fr 72px; gap: 14px; align-items: center; }}
+@media (max-width: 640px) {{ .exits li {{ grid-template-columns: 1fr 60px; }}
+  .exits .exit-track {{ grid-column: 1 / -1; }} }}
+.exit-name {{ font-size: .9rem; display: flex; flex-direction: column; }}
+.exit-class {{ font: 500 .7rem ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--ink-3); text-transform: uppercase; letter-spacing: .06em; }}
+.exit-track {{ background: var(--surface-sunk); border-radius: 3px; height: 20px; overflow: hidden; }}
+.exit-fill {{ background: var(--series-pooled); height: 100%; border-radius: 3px; }}
+.exit-count {{ text-align: right; font-variant-numeric: tabular-nums;
+  font-size: .88rem; color: var(--ink-2); }}
+
 .caveats {{ display: flex; flex-direction: column; gap: 14px; }}
 .caveat {{ display: grid; grid-template-columns: 150px 1fr; gap: 18px; align-items: start; }}
 @media (max-width: 680px) {{ .caveat {{ grid-template-columns: 1fr; gap: 4px; }} }}
@@ -362,17 +466,55 @@ thead th:first-child {{ text-align: left; }}
 }}
 .caveat dd {{ margin: 0; color: var(--ink-2); font-size: .92rem; }}
 footer {{ border-top: 1px solid var(--line); padding-top: 20px; color: var(--ink-3); font-size: .82rem; }}
+
+/* Print / PDF. The screen page is theme-aware; paper is not, so the light
+   palette is pinned here rather than left to whatever the renderer assumes. */
+@media print {{
+  :root {{
+    color-scheme: light;
+    --ground: #ffffff;
+    --surface: #ffffff;
+    --surface-sunk: #eceef0;
+    --line: #c9ced4;
+    --ink: #14181d;
+    --ink-2: #3f4750;
+    --ink-3: #6b747e;
+    --series-baseline: #d2521c;
+    --series-pooled: #1f66bd;
+    --flag: #b4341f;
+    --shadow: none;
+  }}
+  @page {{ size: A4; margin: 14mm 12mm; }}
+  body {{ background: #ffffff; font-size: 10.5pt; }}
+  /* Keep painted fills — Chrome drops backgrounds unless told otherwise, which
+     would erase the exit bars and the congestion swatches. */
+  * {{ -webkit-print-color-adjust: exact; print-color-adjust: exact; }}
+  .wrap {{ max-width: none; padding: 0; gap: 26px; }}
+  /* auto-fit leaves the fourth cell empty on a page this wide, and the grid gap
+     shows through it as a grey slab. Four tiles, two rows, no hole. */
+  .tiles {{ grid-template-columns: repeat(2, 1fr); }}
+  h1 {{ font-size: 24pt; }}
+  h2 {{ font-size: 13pt; }}
+  section, .panel, .verdict, .map-card, .tiles {{ break-inside: avoid; }}
+  h2 {{ break-after: avoid; }}
+  .map-card, .caveat, .exits li, tr {{ break-inside: avoid; }}
+  .panel, .verdict, .map-card {{ box-shadow: none; }}
+  .maps {{ gap: 12px; }}
+  footer {{ break-before: avoid; }}
+}}
 </style>
 
 <div class="wrap">
 <header>
   <div class="eyebrow">Thanet District · LAD E07000114 · SUMO microsimulation</div>
-  <h1>Both plans gridlock Thanet</h1>
+  <h1>Ride-sharing gets {people_gain_pct:.0f}% more people out</h1>
   <p class="lede">Two microsimulations of the same district, the same road network and
   the same alarm. In one, every car-owning household drives itself out. In the other,
-  the seat-assignment plan decides which cars depart. An hour in, both have brought
-  the district to a standstill — and the reason is not the one the project set out to
-  test.</p>
+  fleet minimisation chooses which cars depart and fills them. An hour after
+  notification the pooled plan has moved {pooled['people_cleared_by_horizon']:,} people
+  across the district boundary against {baseline['people_cleared_by_horizon']:,} — in
+  {cars_saved_pct:.0f}% fewer cars. Both are still jammed, and the reason they are is
+  no longer the fleet.</p>
   <div class="runmeta">
     <span>{meta['persons']:,} residents</span>
     <span>{meta['households']:,} households</span>
@@ -385,41 +527,45 @@ footer {{ border-top: 1px solid var(--line); padding-top: 20px; color: var(--ink
 <section>
   <div class="verdict">
     <div class="eyebrow">The finding</div>
-    <p>The ride-shared plan puts <strong>{cars_saved:,} fewer cars</strong> on the road
-    ({cars_saved_pct:.1f}%) and carries <strong>{people_extra:,} more people</strong>,
-    because the baseline simply abandons every household that owns no car. Both are
-    real gains. Neither makes any difference to the jam: {horizon_label} after the
-    alarm both scenarios are moving at
-    <strong>{baseline['final_speed_relative']:.0%} and
-    {pooled['final_speed_relative']:.0%}</strong> of the speed limit, with
-    {baseline['stationary_share_pct']:.0f}% and {pooled['stationary_share_pct']:.0f}%
-    of cars completely stationary.</p>
-    <p>The binding constraint is not how many cars there are. It is that every one of
-    them is routed to a <em>single</em> destination, so the whole district drains
-    through the same few arterial roads. Cutting the fleet by
-    {cars_saved_pct:.1f}% cannot widen them.</p>
+    <p>Fleet minimisation works, and it shows on the road. The pooled plan activates
+    <strong>{pooled['vehicles_departed']:,} cars against
+    {baseline['vehicles_departed']:,}</strong> — {cars_saved_pct:.0f}% fewer — at a
+    mean of {pooled['mean_occupancy']:.2f} people per car, and still carries
+    <strong>{people_extra:,} more people</strong>, because a household with no car has
+    no way out of the baseline at all. {horizon_label} in, it has cleared
+    <strong>{pooled['people_cleared_by_horizon']:,} people</strong> to the baseline's
+    {baseline['people_cleared_by_horizon']:,}, and the roads it is using are moving at
+    {pooled['final_speed_relative']:.0%} of the limit against
+    {baseline['final_speed_relative']:.0%}.</p>
+    <p>What has not changed is that the district is still jammed —
+    {pooled['stationary_share_pct']:.0f}% of the pooled fleet is stationary. The
+    constraint has moved: with the fleet near its packing floor, the binding limit is
+    now that <strong>{busiest_share:.0f}% of every vehicle is sent to one exit</strong>,
+    {busiest['name']}. Emptier cars cannot widen a single road.</p>
   </div>
 
   <div class="tiles">
     <div class="tile">
+      <div class="value">+{people_gain_pct:.0f}%</div>
+      <div class="name">more people actually out</div>
+      <div class="note">{pooled['people_cleared_by_horizon']:,} vs
+        {baseline['people_cleared_by_horizon']:,} by {horizon_label}</div>
+    </div>
+    <div class="tile">
       <div class="value">{cars_saved:,}</div>
       <div class="name">fewer cars on the road</div>
-      <div class="note">{cars_saved_pct:.1f}% of the baseline fleet</div>
+      <div class="note">{cars_saved_pct:.0f}% of the baseline fleet</div>
     </div>
     <div class="tile">
-      <div class="value">+{people_extra:,}</div>
-      <div class="name">more people carried out</div>
-      <div class="note">the baseline strands car-less households</div>
+      <div class="value">{pooled['mean_occupancy']:.2f}</div>
+      <div class="name">people per departing car</div>
+      <div class="note">against {baseline['mean_occupancy']:.2f} in the baseline</div>
     </div>
     <div class="tile">
-      <div class="value">{pooled['final_speed_relative']:.0%}</div>
-      <div class="name">of the speed limit, ride-shared</div>
-      <div class="note">against {baseline['final_speed_relative']:.0%} for the baseline</div>
-    </div>
-    <div class="tile">
-      <div class="value">{pooled['final_halting']:,}</div>
-      <div class="name">cars stationary, ride-shared</div>
-      <div class="note">against {baseline['final_halting']:,} for the baseline</div>
+      <div class="value">{map_stats['pooled']['edges_gridlocked']:,}</div>
+      <div class="name">roads gridlocked, ride-shared</div>
+      <div class="note">against {map_stats['baseline']['edges_gridlocked']:,}
+        for the baseline</div>
     </div>
   </div>
 </section>
@@ -451,11 +597,26 @@ footer {{ border-top: 1px solid var(--line); padding-top: 20px; color: var(--ink
 </section>
 
 <section>
+  <h2>How fast the people get out</h2>
+  <p class="muted">The measure that matters: people across the district boundary,
+  against time. Neither plan finishes — at {horizon_label} the pooled plan has cleared
+  {pooled['people_cleared_pct']:.0f}% of the people it carries and the baseline
+  {baseline['people_cleared_pct']:.0f}% — but the pooled line pulls away and stays
+  ahead, having also picked up {people_extra:,} people the baseline leaves at
+  home.</p>
+  <div class="panel">
+    {people_chart}
+    <div class="legend">
+      <span><i style="background:var(--series-baseline)"></i>One car per household</span>
+      <span><i style="background:var(--series-pooled)"></i>Ride-shared plan</span>
+    </div>
+  </div>
+
   <h2>Cars pile onto the road and stay there</h2>
-  <p class="muted">Both curves climb without turning over: cars enter the network far
-  faster than the exit roads can drain them. The ride-shared line sits consistently
-  below the baseline — by about the {cars_saved_pct:.0f}% you would expect — and that
-  is the entire effect.</p>
+  <p class="muted">Both curves climb without turning over: cars enter the network
+  faster than the exits can drain them. The pooled fleet plateaus around
+  {pooled['peak_running']:,} against the baseline's {baseline['peak_running']:,} — the
+  same shape, roughly {cars_saved_pct:.0f}% lower.</p>
   <div class="panel">
     {running_chart}
     <div class="legend">
@@ -464,10 +625,11 @@ footer {{ border-top: 1px solid var(--line); padding-top: 20px; color: var(--ink
     </div>
   </div>
 
-  <h2>And everything stops moving</h2>
+  <h2>And everything slows to a crawl</h2>
   <p class="muted">Speed as a share of each road's own limit — the measure that needs no
-  assumption about what counts as busy. Both plans collapse to a crawl on the same
-  timetable. A jam this deep is not sensitive to {cars_saved_pct:.0f}% fewer cars.</p>
+  assumption about what counts as busy. Both collapse; the pooled plan collapses to
+  about twice the baseline's speed, which is the difference between very bad and
+  worse rather than between jammed and moving.</p>
   <div class="panel">
     {speed_chart}
     <div class="legend">
@@ -478,6 +640,16 @@ footer {{ border-top: 1px solid var(--line); padding-top: 20px; color: var(--ink
 </section>
 
 <section>
+  <h2>Everyone leaves by the same road</h2>
+  <p class="muted">Vehicles head for whichever of Thanet's {meta['exits']} exits is
+  nearest where they finish collecting. That sends
+  <strong>{busiest_share:.0f}% of the fleet through {busiest['name']}</strong> and
+  leaves the others almost idle. No fleet reduction can compensate for a single
+  road carrying the district.</p>
+  <div class="panel">
+    <ul class="exits">{exit_bars}</ul>
+  </div>
+
   <h2>Every number, side by side</h2>
   <div class="panel tablewrap">
     <table>
@@ -493,30 +665,37 @@ footer {{ border-top: 1px solid var(--line); padding-top: 20px; color: var(--ink
 <section>
   <h2>What this does and does not show</h2>
   <dl class="caveats">
-    <div class="caveat"><dt>The 5% problem</dt><dd>The plan being simulated is the
-    tiered assignment currently in the repository, where every car-owning household
-    boards its own car. It was never going to take many cars off the road. The
-    unimplemented <code>minimise-evacuation-vehicles</code> change targets about
-    25,600 cars instead of {pooled['vehicles_departed']:,} — that is the scenario
-    that would actually test the hypothesis.</dd></div>
+    <div class="caveat"><dt>Nothing finishes</dt><dd>Neither run clears the district
+    inside the {horizon_label} both were stopped at, so every clearance figure here is
+    "how far had it got", not "how long it took". The mean journey times are worse
+    than they look for the same reason: they average only the journeys that completed,
+    which are the short ones.</dd></div>
 
-    <div class="caveat"><dt>Departure timing</dt><dd>Cars leave on a 60-minute
-    mobilisation curve, not all at once. Released simultaneously — which is what
-    <code>fleet_departure_time</code> literally specifies — the district gridlocks
-    completely under <em>both</em> plans: 3% of the speed limit, ~35,000 cars
-    stationary, and 49 of 45,960 arrived after 20 minutes. Under that assumption the
-    comparison has no signal at all.</dd></div>
+    <div class="caveat"><dt>Where the fleet now sits</dt><dd>At
+    {pooled['mean_occupancy']:.2f} people per car against a {meta['vehicle_capacity']}-seat
+    capacity, the plan is close to its packing floor, so there is little left to win by
+    removing cars. Further gains have to come from spreading the load across exits, or
+    from departing in waves.</dd></div>
+
+    <div class="caveat"><dt>Departure timing</dt><dd>Departures come from the
+    pipeline's own model — notification, plus a lognormal mobilisation delay
+    (median {meta['mobilisation_median']:.0f} min), plus the driver's walk to the car.
+    The baseline is drawn from the same distribution with no walk, since an owner is
+    already at their own car. Released simultaneously instead, an earlier run
+    gridlocked the district under <em>both</em> plans — 3% of the speed limit, 49 of
+    45,960 arrived after 20 minutes — so the spread is what makes any comparison
+    possible.</dd></div>
 
     <div class="caveat"><dt>No live rerouting</dt><dd>Drivers follow a shortest path
     fixed before departure and never learn where the jams are. This is the right
     assumption for a no-warning evacuation and a pessimistic one for congestion.</dd></div>
 
-    <div class="caveat"><dt>One destination</dt><dd>Every vehicle drives to the single
-    Canterbury point in <code>PlanningConfig</code>, so all
-    {baseline['vehicles_departed']:,} cars converge on the same handful of arterial
-    roads. On this evidence that funnel — not the size of the fleet — is what decides
-    the outcome, and it is the first thing worth changing. Thanet has three real exit
-    gates; dispersing across them would triple the draining capacity.</dd></div>
+    <div class="caveat"><dt>Where it ends</dt><dd>Clearance is measured at the district
+    boundary: vehicles head for the exit nearest where they finish collecting, and an
+    exit is an infinite-capacity sink, so nothing queues on the far side. Real drivers
+    choose by expected travel time rather than distance, so demand here is
+    over-concentrated on the closest way out — the pipeline reports the loading per
+    exit for exactly that reason.</dd></div>
 
     <div class="caveat"><dt>Where the runs stop</dt><dd>Both simulations were halted at
     the same {horizon_label} mark and compared at that instant, so neither is

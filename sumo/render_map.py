@@ -90,6 +90,21 @@ def build_geometry(net: sumolib.net.Net) -> tuple[dict[str, list], set[str], tup
     return shapes, backdrop, (min(xs), min(ys), max(xs), max(ys))
 
 
+def _frame(
+    shapes: dict[str, list], used: set[str], fallback: tuple, margin: float = 0.04
+) -> tuple:
+    """Bounding box around the roads in use, with a little air around them."""
+    points = [p for edge_id in used for p in shapes.get(edge_id, ())]
+    if not points:
+        return fallback
+    xs = [p[0] for p in points]
+    ys = [p[1] for p in points]
+    min_x, max_x, min_y, max_y = min(xs), max(xs), min(ys), max(ys)
+    pad_x = (max_x - min_x) * margin
+    pad_y = (max_y - min_y) * margin
+    return (min_x - pad_x, min_y - pad_y, max_x + pad_x, max_y + pad_y)
+
+
 def render_png(
     shapes: dict[str, list],
     backdrop: set[str],
@@ -155,16 +170,17 @@ def render_png(
     return f"data:image/png;base64,{encoded}"
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--net", default="data/sumo/thanet.net.xml")
-    parser.add_argument("--data-dir", default="data/sumo")
-    parser.add_argument("--width", type=int, default=1600)
-    parser.add_argument("--out", default="data/sumo/maps.json")
-    args = parser.parse_args()
+def render_maps(
+    net_path: str = "data/sumo/thanet.net.xml",
+    data_dir="data/sumo",
+    out="data/sumo/maps.json",
+    width: int = 1600,
+) -> dict:
+    """Draw both congestion maps at the same worst moment, on one frame."""
 
-    out_dir = Path(args.data_dir) / "out"
-    net = sumolib.net.readNet(args.net)
+    out_dir = Path(data_dir) / "out"
+    out = Path(out)
+    net = sumolib.net.readNet(net_path)
     shapes, backdrop, bbox = build_geometry(net)
     print(f"network: {len(shapes):,} drivable edges, "
           f"{len(backdrop):,} drawn as backdrop")
@@ -175,17 +191,25 @@ def main() -> None:
     snapshot_key = worst_interval(baseline_intervals)
     print(f"peak interval: t={snapshot_key}s")
 
+    pooled_intervals, _ = read_edgedata(out_dir / "pooled.edgedata.xml")
+    per_scenario = {"baseline": baseline_intervals, "pooled": pooled_intervals}
+
+    # Frame both maps on the roads that actually carry traffic in either
+    # scenario, not on the whole downloaded extract — otherwise most of the
+    # picture is empty countryside and the district is a thumbnail in a corner.
+    used = {
+        edge_id
+        for intervals in per_scenario.values()
+        for edge_id in intervals.get(snapshot_key, {})
+    }
+    bbox = _frame(shapes, used, bbox)
+
     result = {"snapshot_s": float(snapshot_key), "maps": {}, "stats": {}}
     for scenario in ("baseline", "pooled"):
-        intervals, _ = (
-            (baseline_intervals, None)
-            if scenario == "baseline"
-            else read_edgedata(out_dir / f"{scenario}.edgedata.xml")
-        )
-        congestion = intervals.get(snapshot_key, {})
+        congestion = per_scenario[scenario].get(snapshot_key, {})
         values = np.array(list(congestion.values())) if congestion else np.array([])
         result["maps"][scenario] = render_png(
-            shapes, backdrop, bbox, congestion, args.width
+            shapes, backdrop, bbox, congestion, width
         )
         result["stats"][scenario] = {
             "edges_carrying_traffic": int(values.size),
@@ -204,9 +228,22 @@ def main() -> None:
         {"ceiling": c, "colour": col, "label": lab, "detail": det}
         for c, col, lab, det in BANDS
     ]
-    Path(args.out).write_text(json.dumps(result))
-    size_mb = Path(args.out).stat().st_size / 1e6
-    print(f"wrote {args.out} ({size_mb:.1f} MB)")
+    out.write_text(json.dumps(result))
+    size_mb = out.stat().st_size / 1e6
+    print(f"wrote {out} ({size_mb:.1f} MB)")
+
+
+    return result
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--net", default="data/sumo/thanet.net.xml")
+    parser.add_argument("--data-dir", default="data/sumo")
+    parser.add_argument("--width", type=int, default=1600)
+    parser.add_argument("--out", default="data/sumo/maps.json")
+    args = parser.parse_args()
+    render_maps(args.net, args.data_dir, args.out, args.width)
 
 
 if __name__ == "__main__":

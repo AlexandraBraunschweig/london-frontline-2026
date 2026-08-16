@@ -1,26 +1,18 @@
 """Turn the evacuation plan into SUMO trip definitions for two scenarios.
 
-`baseline`  — every car-owning household drives its own car out, carrying only
-              its own occupants. One trip per car-owning household.
-`pooled`    — only the vehicles the seat-assignment actually activates depart.
-              One trip per departing muster point.
+`pooled`    — the plan as the pipeline computes it. Only the vehicles
+              `fleet.py` activates depart, each at the time `vehicle_departures`
+              gives it, heading for the district exit that asset assigned.
+`baseline`  — every car-owning household drives its own car out carrying only
+              its own occupants, to its own nearest exit.
 
-Both scenarios send every vehicle to the single fleet-wide destination in
-``PlanningConfig`` (Canterbury).
+The baseline is built here rather than in the warehouse because it is not a
+plan anyone made; it is the thing the plan is measured against. It reuses the
+pipeline's own mobilisation draw and the same exits, so the only difference
+between the two runs is which cars depart and who is in them.
 
-Departure timing is a modelling choice this script makes explicit, because it
-turned out to decide the answer. ``PlanningConfig.fleet_departure_time`` is a
-single instant, and releasing all ~46,000 cars in that one second gridlocks the
-whole district under *either* plan — the network saturates, nobody moves, and
-the two scenarios become indistinguishable. That is a real result about
-simultaneous departure, not about ride-sharing, and ``--instant`` reproduces it.
-
-The default instead spreads departures over a mobilisation curve: people take
-time to gather, load, and go. Departure offsets are drawn from a Rayleigh
-distribution, the usual shape for evacuation mobilisation, scaled so 95% of the
-fleet has left within ``--mobilisation-minutes``. Both scenarios draw from the
-same seeded curve, so the only difference between them remains the number of
-cars on the road.
+Clearance is measured at the district boundary, which is where an evacuation is
+actually over — the exits are the destinations, and nothing queues beyond them.
 """
 
 from __future__ import annotations
@@ -34,46 +26,21 @@ import numpy as np
 import sumolib
 from scipy.spatial import cKDTree
 
-# Matches PlanningConfig.destination_* — Canterbury, the nearest large centre
-# outside Thanet.
-DESTINATION_LON = 1.0789
-DESTINATION_LAT = 51.2802
+from london_frontline.config import PlanningConfig
+from london_frontline.mobilisation import MobilisationProfile, departure_offsets_seconds
 
 # A muster point is a parking spot already snapped to a road, so it is normally
 # metres from an edge. The wider radii only matter where netconvert dropped the
 # road the pipeline snapped to (service roads, driveways).
 SEARCH_RADII_M = (50.0, 150.0, 500.0, 2000.0, 10000.0)
 
-# Matches PlanningConfig.random_seed, so the mobilisation draw is reproducible
-# and identical across scenarios.
-RANDOM_SEED = 20260815
-
-
-def _departure_offsets(count: int, mobilisation_minutes: float) -> np.ndarray:
-    """Seconds after the alarm at which each vehicle actually pulls away.
-
-    Rayleigh is the conventional mobilisation shape: nobody leaves instantly,
-    the bulk goes in the middle, and a tail straggles. Scaled so 95% of the
-    fleet has departed by ``mobilisation_minutes`` — for the Rayleigh CDF that
-    is sigma = t / sqrt(6).
-    """
-    if mobilisation_minutes <= 0:
-        return np.zeros(count)
-    sigma = (mobilisation_minutes * 60.0) / np.sqrt(6.0)
-    rng = np.random.default_rng(RANDOM_SEED)
-    offsets = rng.rayleigh(sigma, count)
-    # Clip the tail so a handful of outliers cannot stretch the run out.
-    return np.clip(offsets, 0.0, mobilisation_minutes * 60.0 * 1.5)
-
 
 def _edge_point_index(net: sumolib.net.Net) -> tuple[cKDTree, list]:
     """A KD-tree over the shape points of every passenger-drivable edge.
 
     ``sumolib.net.getNeighboringEdges`` is a linear scan per query without an
-    rtree installed; at ~46,000 queries against ~45,000 edges that is a cross
+    rtree installed; at ~46,000 queries against ~27,000 edges that is a cross
     product. Indexing shape points instead is one build and 46,000 lookups.
-    Nearest *shape point* rather than nearest perpendicular projection is close
-    enough here — the pipeline already snapped these points onto a road.
     """
     points: list[tuple[float, float]] = []
     owners: list = []
@@ -102,9 +69,7 @@ def _nearest_edges(
     for radius in SEARCH_RADII_M:
         if outstanding.size == 0:
             break
-        distances, indices = tree.query(
-            xy[outstanding], distance_upper_bound=radius
-        )
+        distances, indices = tree.query(xy[outstanding], distance_upper_bound=radius)
         still_missing = []
         for slot, distance, index in zip(outstanding, distances, indices):
             if np.isinf(distance):
@@ -115,91 +80,116 @@ def _nearest_edges(
     return found
 
 
-def _origins(conn: duckdb.DuckDBPyConnection, scenario: str):
-    """Origin muster points for a scenario, as (id, lon, lat, occupants)."""
-    if scenario == "baseline":
-        # One car per car-owning household. A household with two cars still
-        # drives one out; the baseline is one-car-per-household, not per car.
-        # Occupants are that household's own people, nobody else's.
-        sql = """
-            WITH chosen AS (
-                SELECT household_id, min(muster_point_id) AS muster_point_id
-                FROM muster_points GROUP BY household_id
-            )
-            SELECT c.muster_point_id,
+def _pooled(conn: duckdb.DuckDBPyConnection):
+    """The plan's own fleet: activated vehicles, their departures and exits."""
+    return conn.execute(
+        """
+        WITH occupancy AS (
+            SELECT muster_point_id, sum(seats) AS occupants
+            FROM seat_assignments GROUP BY muster_point_id
+        )
+        SELECT d.muster_point_id,
+               d.departure_offset_s,
+               ST_X(m.geometry) AS lon, ST_Y(m.geometry) AS lat,
+               ST_X(e.geometry) AS exit_lon, ST_Y(e.geometry) AS exit_lat,
+               o.occupants
+        FROM vehicle_departures d
+        JOIN muster_points m USING (muster_point_id)
+        JOIN district_exits e USING (exit_id)
+        JOIN occupancy o USING (muster_point_id)
+        ORDER BY d.muster_point_id
+        """
+    ).fetchdf()
+
+
+def _baseline(conn: duckdb.DuckDBPyConnection, planning: PlanningConfig):
+    """One car per car-owning household, carrying only that household.
+
+    Departure offsets are drawn from the same lognormal the pipeline uses, with
+    no driver-access term: in this scenario the owner is already at their own
+    car, so there is nothing to walk to.
+    """
+    frame = conn.execute(
+        """
+        WITH chosen AS (
+            SELECT household_id, min(muster_point_id) AS muster_point_id
+            FROM muster_points GROUP BY household_id
+        ),
+        located AS (
+            SELECT c.muster_point_id, c.household_id, m.easting, m.northing,
                    ST_X(m.geometry) AS lon, ST_Y(m.geometry) AS lat,
                    (SELECT count(*) FROM persons p
                      WHERE p.household_id = c.household_id) AS occupants
             FROM chosen c JOIN muster_points m USING (muster_point_id)
-            ORDER BY c.muster_point_id
+        )
+        SELECT l.muster_point_id, l.lon, l.lat, l.occupants,
+               ST_X(e.geometry) AS exit_lon, ST_Y(e.geometry) AS exit_lat
+        FROM located l
+        JOIN LATERAL (
+            SELECT d.geometry,
+                   ST_Distance(ST_Point(l.easting, l.northing),
+                               ST_Point(d.easting, d.northing)) AS exit_distance_m
+            FROM district_exits d
+            ORDER BY exit_distance_m, d.exit_id
+            LIMIT 1
+        ) e ON true
+        ORDER BY l.muster_point_id
         """
-    elif scenario == "pooled":
-        # Only the vehicles the plan actually activates, with the occupants the
-        # plan gives them — including people walked in from other households.
-        sql = """
-            SELECT s.muster_point_id,
-                   ST_X(m.geometry) AS lon, ST_Y(m.geometry) AS lat,
-                   sum(s.seats) AS occupants
-            FROM seat_assignments s JOIN muster_points m USING (muster_point_id)
-            GROUP BY s.muster_point_id, m.geometry
-            ORDER BY s.muster_point_id
-        """
-    else:
-        raise ValueError(f"unknown scenario {scenario!r}")
-    return conn.execute(sql).fetchdf()
+    ).fetchdf()
 
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("scenario", choices=["baseline", "pooled"])
-    parser.add_argument("--warehouse", default="data/warehouse.duckdb")
-    parser.add_argument("--net", default="data/sumo/thanet.net.xml")
-    parser.add_argument("--out", default=None)
-    parser.add_argument(
-        "--mobilisation-minutes", type=float, default=60.0,
-        help="minutes by which 95%% of the fleet has departed (default: 60)",
+    profile = MobilisationProfile(
+        median_minutes=planning.mobilisation_median_minutes,
+        sigma=planning.mobilisation_sigma,
     )
-    parser.add_argument(
-        "--instant", action="store_true",
-        help="release the entire fleet at t=0, as fleet_departure_time literally "
-             "specifies; this gridlocks the district under either plan",
+    offsets, _, _ = departure_offsets_seconds(
+        frame.muster_point_id.tolist(),
+        np.zeros(len(frame)),
+        profile,
+        planning.random_seed,
+        include_driver_access_time=False,
     )
-    args = parser.parse_args()
+    frame["departure_offset_s"] = offsets
+    return frame
 
-    mobilisation = 0.0 if args.instant else args.mobilisation_minutes
-    out_path = Path(args.out or f"data/sumo/{args.scenario}.trips.xml")
 
-    print(f"[{args.scenario}] reading the plan")
-    with duckdb.connect(args.warehouse, read_only=True) as conn:
+def build_trips(
+    scenario: str,
+    warehouse: str = "data/warehouse.duckdb",
+    net: str = "data/sumo/thanet.net.xml",
+    out=None,
+) -> dict:
+    """Write one scenario's trips and report what went into them."""
+
+    planning = PlanningConfig()
+    out_path = Path(out or f"data/sumo/{scenario}.trips.xml")
+
+    print(f"[{scenario}] reading the plan")
+    with duckdb.connect(warehouse, read_only=True) as conn:
         conn.execute("INSTALL spatial; LOAD spatial;")
-        frame = _origins(conn, args.scenario)
-    print(f"[{args.scenario}] {len(frame):,} vehicles, "
-          f"{int(frame.occupants.sum()):,} people aboard")
+        frame = (
+            _pooled(conn) if scenario == "pooled" else _baseline(conn, planning)
+        )
+    print(f"[{scenario}] {len(frame):,} vehicles, "
+          f"{int(frame.occupants.sum()):,} people aboard, "
+          f"departures {frame.departure_offset_s.min() / 60:.0f}–"
+          f"{frame.departure_offset_s.max() / 60:.0f} min after notification")
 
-    print(f"[{args.scenario}] loading network")
-    net = sumolib.net.readNet(args.net)
+    print(f"[{scenario}] loading network")
+    net = sumolib.net.readNet(net)
     tree, owners = _edge_point_index(net)
 
     origin_edges = _nearest_edges(
         net, tree, owners, frame.lon.to_numpy(), frame.lat.to_numpy()
     )
-    destination_edge = _nearest_edges(
-        net, tree, owners,
-        np.array([DESTINATION_LON]), np.array([DESTINATION_LAT]),
-    )[0]
-    if destination_edge is None:
-        raise SystemExit("the destination is not on the network")
+    destination_edges = _nearest_edges(
+        net, tree, owners, frame.exit_lon.to_numpy(), frame.exit_lat.to_numpy()
+    )
 
-    unplaced = sum(edge is None for edge in origin_edges)
-    # A vehicle whose origin edge is also the destination edge has no journey to
-    # make and would be dropped by the router; keep the count visible.
-    trivial = 0
-
-    # SUMO requires departures in ascending order, so build the rows first and
-    # sort on departure time rather than streaming them out in muster-point order.
-    offsets = _departure_offsets(len(frame), mobilisation)
+    unplaced = trivial = 0
     rows = sorted(
-        zip(offsets, frame.itertuples(), origin_edges), key=lambda t: t[0]
+        zip(frame.departure_offset_s.to_numpy(), frame.itertuples(),
+            origin_edges, destination_edges),
+        key=lambda t: t[0],
     )
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -211,37 +201,50 @@ def main() -> None:
             '         maxSpeed="38.0" speedFactor="normc(1.0,0.10,0.8,1.2)"/>\n'
         )
         written = 0
-        for (offset, row, edge) in rows:
-            if edge is None:
+        for offset, row, origin, destination in rows:
+            if origin is None or destination is None:
+                unplaced += 1
                 continue
-            if edge.getID() == destination_edge.getID():
+            if origin.getID() == destination.getID():
+                # Already parked on its way out; it has no journey to simulate.
                 trivial += 1
                 continue
-            # SUMO still holds any vehicle it cannot physically fit onto the road
-            # yet, so the queue to get moving remains part of what is measured —
-            # the mobilisation curve sets when each driver *wants* to leave.
             handle.write(
-                f'  <trip id="{args.scenario[0]}{row.muster_point_id}" type="evac"'
-                f' depart="{offset:.1f}" from={quoteattr(edge.getID())}'
-                f' to={quoteattr(destination_edge.getID())}'
+                f'  <trip id="{scenario[0]}{row.muster_point_id}" type="evac"'
+                f' depart="{offset:.1f}" from={quoteattr(origin.getID())}'
+                f' to={quoteattr(destination.getID())}'
                 f' departLane="best" departSpeed="max"'
                 f' occupancy="{int(row.occupants)}"/>\n'
             )
             written += 1
         handle.write("</routes>\n")
 
-    if mobilisation:
-        print(f"[{args.scenario}] departures spread over a {mobilisation:.0f}-minute "
-              f"mobilisation curve (95% away by then)")
-    else:
-        print(f"[{args.scenario}] all vehicles released at t=0")
-    print(f"[{args.scenario}] wrote {written:,} trips to {out_path}")
+    print(f"[{scenario}] wrote {written:,} trips to {out_path}")
     if unplaced:
-        print(f"[{args.scenario}] {unplaced:,} vehicles had no edge within "
+        print(f"[{scenario}] {unplaced:,} vehicles had no edge within "
               f"{SEARCH_RADII_M[-1]:.0f} m and were dropped")
     if trivial:
-        print(f"[{args.scenario}] {trivial:,} vehicles already start on the "
-              f"destination edge and were dropped")
+        print(f"[{scenario}] {trivial:,} vehicles already sit on their exit "
+              f"edge and were dropped")
+
+
+    return {
+        "scenario": scenario,
+        "path": str(out_path),
+        "vehicles": written,
+        "unplaced": unplaced,
+        "trivial": trivial,
+    }
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("scenario", choices=["baseline", "pooled"])
+    parser.add_argument("--warehouse", default="data/warehouse.duckdb")
+    parser.add_argument("--net", default="data/sumo/thanet.net.xml")
+    parser.add_argument("--out", default=None)
+    args = parser.parse_args()
+    build_trips(args.scenario, args.warehouse, args.net, args.out)
 
 
 if __name__ == "__main__":

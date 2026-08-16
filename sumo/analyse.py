@@ -101,14 +101,24 @@ def _truncate(steps: dict, horizon: float) -> dict:
     return {key: value[keep] for key, value in steps.items()}
 
 
-def _percentile_time(times: np.ndarray, cleared: np.ndarray, fraction: float):
-    """When did `fraction` of everything that ever arrives get clear?"""
-    if times.size == 0:
+def _percentile_time(
+    times: np.ndarray, cleared: np.ndarray, fraction: float, total: float
+):
+    """When did `fraction` of the whole fleet get clear? None if it never did.
+
+    The denominator is everyone who set off, not everyone who happens to have
+    arrived by the horizon. Against the arrived subset these percentiles read
+    like clearance times while describing only the fastest few per cent — a run
+    with 4,000 arrivals out of 46,000 would report "half the people clear" for
+    2,000 of them.
+    """
+    if times.size == 0 or total <= 0:
         return None
-    target = cleared[-1] * fraction
+    target = total * fraction
+    if cleared[-1] < target:
+        return None
     index = int(np.searchsorted(cleared, target))
-    index = min(index, times.size - 1)
-    return float(times[index])
+    return float(times[min(index, times.size - 1)])
 
 
 def _teleports(stats_path: Path, steps: dict) -> int:
@@ -144,14 +154,35 @@ def analyse(scenario: str, out_dir: Path, data_dir: Path, horizon: float) -> dic
         "mean_occupancy": round(people_total / vehicles_total, 2)
         if vehicles_total
         else 0,
-        # Clearance times, in seconds from the single fleet-wide departure.
-        "t50_vehicles": _percentile_time(times, trips["vehicles_cleared"], 0.50),
-        "t90_vehicles": _percentile_time(times, trips["vehicles_cleared"], 0.90),
-        "t95_vehicles": _percentile_time(times, trips["vehicles_cleared"], 0.95),
-        "t100_vehicles": float(times[-1]) if times.size else None,
-        "t50_people": _percentile_time(times, trips["people_cleared"], 0.50),
-        "t90_people": _percentile_time(times, trips["people_cleared"], 0.90),
-        "t95_people": _percentile_time(times, trips["people_cleared"], 0.95),
+        # Clearance times, in seconds after notification, against the whole
+        # fleet. None means that share never got out before the horizon.
+        "t50_vehicles": _percentile_time(
+            times, trips["vehicles_cleared"], 0.50, vehicles_total),
+        "t90_vehicles": _percentile_time(
+            times, trips["vehicles_cleared"], 0.90, vehicles_total),
+        "t95_vehicles": _percentile_time(
+            times, trips["vehicles_cleared"], 0.95, vehicles_total),
+        "t100_vehicles": (
+            float(times[-1])
+            if times.size and len(times) >= vehicles_total else None
+        ),
+        "t50_people": _percentile_time(
+            times, trips["people_cleared"], 0.50, people_total),
+        "t90_people": _percentile_time(
+            times, trips["people_cleared"], 0.90, people_total),
+        "t95_people": _percentile_time(
+            times, trips["people_cleared"], 0.95, people_total),
+        # The honest headline for a run that never finishes: how many actually
+        # got out, and what share of everyone that is.
+        "people_cleared_by_horizon": int(
+            np.interp(horizon, times, trips["people_cleared"], left=0,
+                      right=float(trips["people_cleared"][-1]))
+        ) if times.size else 0,
+        "people_cleared_pct": round(
+            100 * float(np.interp(horizon, times, trips["people_cleared"], left=0,
+                                  right=float(trips["people_cleared"][-1])))
+            / people_total, 1
+        ) if times.size and people_total else 0.0,
         # Delay. timeLoss is SUMO's own measure: time lost against travelling the
         # same route unobstructed at the vehicle's desired speed.
         "mean_duration_s": float(np.mean(trips["durations"])) if times.size else 0,
@@ -191,8 +222,12 @@ def analyse(scenario: str, out_dir: Path, data_dir: Path, horizon: float) -> dic
         "speed_relative_pct": (steps["speed_relative"][minute] * 100).tolist(),
         "teleports": steps["teleports"][minute].tolist(),
     }
-    # Arrival curves, sampled at a fixed grid so both scenarios line up.
-    grid = np.arange(0, (times[-1] if times.size else 0) + 60, 60)
+    # Arrival curves, sampled at a fixed grid so both scenarios line up — and cut
+    # at the shared horizon. The faster run reaches a later simulated time before
+    # both are stopped, so an untruncated curve would credit it with arrivals from
+    # minutes the other scenario never got to play.
+    last = min(times[-1] if times.size else 0.0, horizon)
+    grid = np.arange(0, last + 60, 60)
     result["arrivals"] = {
         "time_s": grid.tolist(),
         "vehicles": np.searchsorted(times, grid, side="right").tolist(),
@@ -202,6 +237,62 @@ def analyse(scenario: str, out_dir: Path, data_dir: Path, horizon: float) -> dic
         ).tolist(),
     }
     return result
+
+
+def run_analysis(
+    data_dir="data/sumo",
+    out="data/sumo/comparison.json",
+    horizon: float | None = None,
+) -> dict:
+    """Compare both runs at one shared moment and write the JSON the page reads."""
+
+    data_dir = Path(data_dir)
+    out = Path(out)
+    out_dir = data_dir / "out"
+
+    # Both scenarios must be read at the same simulated moment, or a run that
+    # happened to get further would look better purely for having run longer.
+    # horizon may be None: fall back to the shared end of both runs
+    if horizon is None:
+        horizon = min(
+            _summary(out_dir / f"{s}.summary.xml")["time"][-1] for s in SCENARIOS
+        )
+    print(f"comparing both scenarios at t={horizon:.0f}s "
+          f"({horizon / 60:.0f} min after the alarm)")
+    results = {s: analyse(s, out_dir, data_dir, horizon) for s in SCENARIOS}
+
+    out.write_text(json.dumps(results, indent=2))
+
+    for scenario in SCENARIOS:
+        r = results[scenario]
+        print(f"\n=== {r['label']} ===")
+        print(f"  cars departed      {r['vehicles_departed']:,}")
+        print(f"  people carried     {r['people_carried']:,} "
+              f"(mean {r['mean_occupancy']} per car)")
+        print(f"  people clear       {r['people_cleared_by_horizon']:,} "
+              f"({r['people_cleared_pct']}% of those carried)")
+        print(f"  cars clear         {r['vehicles_arrived']:,}")
+        for label, key in (("half the people", "t50_people"),
+                           ("90% of people", "t90_people"),
+                           ("every car clear", "t100_vehicles")):
+            value = r[key]
+            print(f"  {label:18s} {value / 60:.0f} min" if value
+                  else f"  {label:18s} not reached by the horizon")
+        print(f"  completed journeys mean {r['mean_duration_s'] / 60:.1f} min, "
+              f"delay {r['mean_time_loss_s'] / 60:.1f} min "
+              f"(arrivals only, so survivorship-biased)")
+        print(f"  cars on road       {r['final_running']:,}")
+        print(f"  of those stopped   {r['final_halting']:,} "
+              f"({r['stationary_share_pct']}%)")
+        print(f"  speed vs limit     {r['final_speed_relative'] * 100:.1f}% "
+              f"(worst {r['worst_speed_relative'] * 100:.1f}%)")
+        print(f"  peak cars on road  {r['peak_running']:,}")
+        print(f"  teleports          {r['teleports']:,}")
+
+    print(f"\nwrote {out}")
+
+
+    return results
 
 
 def main() -> None:
@@ -214,39 +305,7 @@ def main() -> None:
              "(default: the last moment both runs reached)",
     )
     args = parser.parse_args()
-
-    data_dir = Path(args.data_dir)
-    out_dir = data_dir / "out"
-
-    # Both scenarios must be read at the same simulated moment, or a run that
-    # happened to get further would look better purely for having run longer.
-    horizon = args.horizon
-    if horizon is None:
-        horizon = min(
-            _summary(out_dir / f"{s}.summary.xml")["time"][-1] for s in SCENARIOS
-        )
-    print(f"comparing both scenarios at t={horizon:.0f}s "
-          f"({horizon / 60:.0f} min after the alarm)")
-    results = {s: analyse(s, out_dir, data_dir, horizon) for s in SCENARIOS}
-
-    Path(args.out).write_text(json.dumps(results, indent=2))
-
-    for scenario in SCENARIOS:
-        r = results[scenario]
-        print(f"\n=== {r['label']} ===")
-        print(f"  cars departed      {r['vehicles_departed']:,}")
-        print(f"  people carried     {r['people_carried']:,} "
-              f"(mean {r['mean_occupancy']} per car)")
-        print(f"  arrived by horizon {r['arrived_by_horizon']:,}")
-        print(f"  cars on road       {r['final_running']:,}")
-        print(f"  of those stopped   {r['final_halting']:,} "
-              f"({r['stationary_share_pct']}%)")
-        print(f"  speed vs limit     {r['final_speed_relative'] * 100:.1f}% "
-              f"(worst {r['worst_speed_relative'] * 100:.1f}%)")
-        print(f"  peak cars on road  {r['peak_running']:,}")
-        print(f"  teleports          {r['teleports']:,}")
-
-    print(f"\nwrote {args.out}")
+    run_analysis(args.data_dir, args.out, args.horizon)
 
 
 if __name__ == "__main__":

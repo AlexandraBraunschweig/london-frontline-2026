@@ -27,11 +27,13 @@ echo "== routing $SCENARIO"
   --routing-threads 4 \
   --no-step-log
 
-# 5-minute aggregation windows: fine enough to watch the jam build and drain,
-# coarse enough that the output stays a readable size.
+# One aggregation window per minute, so the whole hour can be replayed frame by
+# frame rather than only sampled. excludeEmpty keeps it to roads actually
+# carrying traffic; at ~6,000 of those the file still runs to ~100 MB.
+FREQ="${EDGEDATA_FREQ:-60}"
 cat > "data/sumo/${SCENARIO}.edgedata.add.xml" <<XML
 <additional>
-  <edgeData id="cong" freq="300" file="${SCENARIO}.edgedata.xml"
+  <edgeData id="cong" freq="${FREQ}" file="${SCENARIO}.edgedata.xml"
             excludeEmpty="true" minSamples="1"/>
 </additional>
 XML
@@ -44,11 +46,17 @@ echo "== simulating $SCENARIO"
 # max-depart-delay is unlimited so that no vehicle is ever silently dropped for
 # failing to find a gap — a discarded car would flatter whichever scenario was
 # more congested.
+# The run ends on the clock, not when the network empties. Neither scenario
+# clears Thanet in any reasonable time, and stopping both at the same simulated
+# instant is what makes them comparable — a run left to finish would be compared
+# against one that had simply been given longer. It also lets SUMO close its own
+# output files instead of being killed.
+END="${SIM_END:-3600}"
 "$VENV/bin/sumo" \
   --net-file "$NET" \
   --route-files "$ROUTES" \
   --additional-files "data/sumo/${SCENARIO}.edgedata.add.xml" \
-  --begin 0 --end 43200 --step-length 1 \
+  --begin 0 --end "$END" --step-length 1 \
   --time-to-teleport 600 \
   --max-depart-delay -1 \
   --summary-output "$OUT/${SCENARIO}.summary.xml" \
