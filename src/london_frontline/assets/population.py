@@ -130,17 +130,8 @@ def synthetic_population(
         )
         next_household_id += household_total
 
-        household_frames.append(
-            pd.DataFrame(
-                {
-                    "household_id": household_ids,
-                    "area_id": area,
-                    "composition_type": compositions,
-                    "num_persons": sizes,
-                    "num_cars": cars,
-                }
-            )
-        )
+        # Households are recorded once, further down, after num_adults is known:
+        # the licence coupling needs the adult count on the same row.
 
         # Persons are generated to fill the household sizes just allocated, so
         # the person count follows the household-size marginal rather than the

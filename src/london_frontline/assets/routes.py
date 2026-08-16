@@ -41,6 +41,8 @@ def vehicle_routes(
     a configured average speed. No congestion is modelled, which is the
     downstream microsimulation's job.
     """
+    speed_m_per_second = planning.average_driving_speed_kph * 1000.0 / 3600.0
+    dwell_seconds = planning.stop_dwell_minutes * 60.0
 
     with warehouse.connect() as conn:
         # --- Leader: a car-licensed occupant, preferring the owner household --
